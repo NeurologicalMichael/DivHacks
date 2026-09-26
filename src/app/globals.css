@@ -47,9 +47,7 @@ button:disabled { cursor: wait; opacity: 0.7; }
 .pin[data-level="mid"] { background: #6d5844; }
 .pin[data-level="high"] { background: var(--copper); }
 .pin.is-active { outline: 2px solid white; transform: scale(1.12); }
-.maplibregl-map { font: inherit; }
-.maplibregl-ctrl-attrib { font-size: 10px; background: rgba(247, 250, 248, 0.9); }
-.maplibregl-ctrl-bottom-right { margin: 0 12px 36px 0; }
+.leaflet-control-attribution { font-size: 10px; }
 
 .panel {
   position: absolute;
