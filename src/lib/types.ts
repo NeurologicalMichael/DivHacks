@@ -39,6 +39,7 @@ export type Summary = {
   turnoverScore: number;
   fitScore: number;
   fitCategory: string;
+  retailArea: number | null;
   signalCount: number;
   hasDemoLandlord: boolean;
   hasLandlordOptIn: boolean;

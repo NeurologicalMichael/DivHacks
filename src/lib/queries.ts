@@ -44,6 +44,7 @@ function mapSummary(row: Row, category: string): Summary {
     turnoverScore: Number(row.turnover_score ?? 0),
     fitScore: fitScore(components),
     fitCategory: category,
+    retailArea: num(row.retail_area),
     signalCount: Number(row.signal_count ?? 0),
     hasDemoLandlord,
     hasLandlordOptIn,
