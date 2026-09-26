@@ -287,40 +287,86 @@ button:disabled { cursor: wait; opacity: 0.7; }
   position: absolute;
   inset: 0;
   z-index: 6000;
-  background: rgba(27, 23, 20, 0.38);
+  background: rgba(27, 23, 20, 0.28);
   display: grid;
   place-items: center;
-  padding: 20px;
+  padding: 32px;
 }
-.onboard article {
-  width: min(560px, 100%);
-  max-height: min(86vh, 820px);
-  overflow: auto;
-  background: var(--paper-solid);
-  border-radius: 22px;
-  padding: 22px;
+.onboard-sheet {
+  width: min(1080px, 100%);
+  height: min(860px, calc(100vh - 64px));
+  display: flex;
+  flex-direction: column;
+  background: var(--white);
+  border-radius: 28px;
+  padding: 36px 44px 28px;
   box-shadow: var(--shadow);
 }
-.onboard h2 { font-family: var(--serif); font-weight: 560; margin: 0 0 8px; letter-spacing: -0.03em; }
-.choice-grid { display: flex; flex-wrap: wrap; gap: 8px; }
-.choice {
-  border: 1px solid var(--line);
-  background: var(--white);
-  border-radius: 14px;
-  padding: 8px 12px;
+.onboard-progress { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.onboard-progress span { height: 3px; border-radius: 99px; background: rgba(27, 23, 20, 0.12); }
+.onboard-progress span.is-on { background: var(--ink); }
+.onboard-step {
+  margin: 18px 0 0;
+  color: var(--muted);
   font-size: 13px;
-  text-align: left;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
-.choice b { display: block; font-weight: 560; }
-.choice span { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
-.choice.on { background: var(--ink); color: var(--paper-solid); border-color: var(--ink); }
-.choice.on span { color: rgba(247, 243, 235, 0.78); }
+.onboard-sheet h2 {
+  font-family: var(--serif);
+  font-weight: 560;
+  font-size: clamp(32px, 4vw, 46px);
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+  margin: 8px 0 10px;
+}
+.onboard-lead { margin: 0; color: var(--muted); font-size: 16px; line-height: 1.4; }
+.onboard-body { flex: 1; min-height: 0; overflow: auto; padding: 28px 2px 8px; }
+.onboard-sections { display: grid; gap: 28px; }
+.onboard-label { margin: 0 0 12px; color: var(--muted); font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; }
+.onboard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.onboard-grid + .onboard-grid,
+.onboard-grid + input,
+.onboard input { margin-top: 12px; }
+.onboard-grid-wide { grid-template-columns: repeat(3, 1fr); }
+.onboard-grid-pair { grid-template-columns: repeat(2, minmax(0, 280px)); }
+.onboard-option {
+  min-height: 64px;
+  border: 1px solid var(--line);
+  background: transparent;
+  border-radius: 16px;
+  padding: 16px 18px;
+  text-align: left;
+  font-size: 16px;
+  line-height: 1.3;
+}
+.onboard-option b { display: block; font-weight: 560; font-size: 18px; }
+.onboard-option span { display: block; margin-top: 6px; color: var(--muted); font-size: 14px; }
+.onboard-option.is-on { background: var(--ink); color: var(--paper-solid); border-color: var(--ink); }
+.onboard-option.is-on span { color: rgba(247, 243, 235, 0.78); }
+.onboard input {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  padding: 14px 2px;
+  font-size: 16px;
+  outline: none;
+}
+.onboard-error { margin: 8px 0 0; color: var(--copper-deep); font-size: 14px; }
+.onboard-foot { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-top: 18px; }
+.onboard-foot .ghost,
+.onboard-foot .primary { min-width: 148px; padding: 14px 22px; border-radius: 999px; font-size: 16px; }
 .profile-note { margin: 12px 18px 0; }
 
 @media (max-width: 860px) {
   .panel { top: auto; height: min(64vh, 680px); width: auto; right: 10px; left: 10px; bottom: 10px; }
   .legend { display: none; }
   .status { left: 10px; right: auto; bottom: auto; top: 10px; }
+  .onboard { padding: 12px; }
+  .onboard-sheet { height: calc(100vh - 24px); padding: 22px 18px 16px; border-radius: 22px; }
+  .onboard-grid-wide, .onboard-grid-pair { grid-template-columns: 1fr; }
+  .onboard-foot .ghost, .onboard-foot .primary { min-width: 0; flex: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
   .card { animation: none; }
