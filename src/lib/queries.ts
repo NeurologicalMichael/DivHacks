@@ -1,5 +1,6 @@
 import { availabilityFor } from "./availability";
 import { query } from "./db";
+import { normalizeProfile, profileBrief, type RenterProfile } from "./profile";
 import type { BreakdownItem, Gap, SearchFilters, StorefrontDetail, Summary } from "./types";
 
 type Row = Record<string, unknown>;
@@ -424,6 +425,107 @@ export async function createLandlordSignal(input: {
   if (!rows[0]) return null;
   await query("SELECT refresh_signals()");
   return rows[0];
+}
+
+let profileTableReady = false;
+
+async function ensureProfileTable() {
+  if (profileTableReady) return;
+  await query(`
+    CREATE TABLE IF NOT EXISTS renter_profiles (
+      session_id TEXT PRIMARY KEY,
+      lease_kind TEXT NOT NULL,
+      commercial_use TEXT,
+      beds TEXT,
+      budget TEXT,
+      home_budget TEXT,
+      size_band TEXT,
+      timing TEXT,
+      near_subway BOOLEAN,
+      boroughs TEXT[] NOT NULL DEFAULT '{}',
+      neighborhoods TEXT[] NOT NULL DEFAULT '{}',
+      must_haves TEXT[] NOT NULL DEFAULT '{}',
+      concept TEXT,
+      profile JSONB NOT NULL,
+      brief JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  profileTableReady = true;
+}
+
+export async function saveRenterProfile(sessionId: string, input: unknown) {
+  const profile = normalizeProfile(input);
+  if (!profile) return null;
+  const brief = profileBrief(profile);
+  await ensureProfileTable();
+  const rows = await query<Row>(
+    `INSERT INTO renter_profiles (
+       session_id, lease_kind, commercial_use, beds, budget, home_budget, size_band, timing,
+       near_subway, boroughs, neighborhoods, must_haves, concept, profile, brief
+     ) VALUES (
+       $1, $2, $3, $4, $5, $6, $7, $8,
+       $9, $10, $11, $12, $13, $14::jsonb, $15::jsonb
+     )
+     ON CONFLICT (session_id) DO UPDATE SET
+       lease_kind = EXCLUDED.lease_kind,
+       commercial_use = EXCLUDED.commercial_use,
+       beds = EXCLUDED.beds,
+       budget = EXCLUDED.budget,
+       home_budget = EXCLUDED.home_budget,
+       size_band = EXCLUDED.size_band,
+       timing = EXCLUDED.timing,
+       near_subway = EXCLUDED.near_subway,
+       boroughs = EXCLUDED.boroughs,
+       neighborhoods = EXCLUDED.neighborhoods,
+       must_haves = EXCLUDED.must_haves,
+       concept = EXCLUDED.concept,
+       profile = EXCLUDED.profile,
+       brief = EXCLUDED.brief,
+       updated_at = now()
+     RETURNING profile, brief, updated_at`,
+    [
+      sessionId,
+      profile.leaseKind,
+      profile.use,
+      profile.beds,
+      profile.budget,
+      profile.homeBudget,
+      profile.size,
+      profile.timing,
+      profile.nearSubway,
+      profile.boroughs,
+      profile.neighborhoods,
+      profile.mustHaves,
+      profile.concept || null,
+      JSON.stringify(profile),
+      JSON.stringify(brief),
+    ],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    profile: row.profile as RenterProfile,
+    brief: row.brief as ReturnType<typeof profileBrief>,
+    updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
+  };
+}
+
+export async function loadRenterProfile(sessionId: string) {
+  await ensureProfileTable();
+  const rows = await query<Row>(
+    `SELECT profile, brief, updated_at FROM renter_profiles WHERE session_id = $1`,
+    [sessionId],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  const profile = normalizeProfile(row.profile);
+  if (!profile) return null;
+  return {
+    profile,
+    brief: profileBrief(profile),
+    updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
+  };
 }
 
 export async function watchProperty(sessionId: string, propertyId: string) {

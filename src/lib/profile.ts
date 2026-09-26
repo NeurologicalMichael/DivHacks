@@ -206,6 +206,137 @@ export function saveProfile(profile: RenterProfile) {
   window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
 }
 
+export type ProfileUse = "filter" | "compare" | "context";
+
+export type ProfilePriority = {
+  rank: number;
+  field: string;
+  value: string;
+  use: ProfileUse;
+};
+
+export type ProfileBrief = {
+  version: 1;
+  leaseKind: string;
+  concept: string | null;
+  priorities: ProfilePriority[];
+};
+
+function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | null {
+  return typeof value === "string" && (allowed as readonly string[]).includes(value) ? (value as T) : null;
+}
+
+function stringList(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+const MUST_IDS = new Set([...COMMERCIAL_MUSTS, ...HOME_MUSTS].map((item) => item.id));
+
+export function normalizeProfile(input: unknown): RenterProfile | null {
+  if (!input || typeof input !== "object") return null;
+  const raw = input as Record<string, unknown>;
+  const leaseKind = oneOf(raw.leaseKind, ["commercial", "residential", "both"] as const);
+  if (!leaseKind) return null;
+  const boroughs = stringList(raw.boroughs).filter((borough) => BOROUGHS.includes(borough));
+  if (!boroughs.length) return null;
+  const allowedNeighborhoods = new Set<string>(neighborhoodsFor(boroughs));
+  const draft: RenterProfile = {
+    version: 1,
+    leaseKind,
+    use: oneOf(raw.use, COMMERCIAL_USES.map((item) => item.id)),
+    concept: typeof raw.concept === "string" ? raw.concept.trim().slice(0, 80) : "",
+    beds: oneOf(raw.beds, BEDS.map((item) => item.id)),
+    household: oneOf(raw.household, HOUSEHOLDS.map((item) => item.id)),
+    pets: oneOf(raw.pets, PETS.map((item) => item.id)),
+    budget: oneOf(raw.budget, [...COMMERCIAL_BUDGETS, ...HOME_BUDGETS].map((item) => item.id)),
+    homeBudget: oneOf(raw.homeBudget, HOME_BUDGETS.map((item) => item.id)),
+    size: oneOf(raw.size, SIZE_BANDS.map((item) => item.id)),
+    timing: oneOf(raw.timing, TIMINGS.map((item) => item.id)),
+    boroughs,
+    neighborhoods: stringList(raw.neighborhoods).filter((name) => allowedNeighborhoods.has(name)),
+    nearSubway: typeof raw.nearSubway === "boolean" ? raw.nearSubway : null,
+    mustHaves: stringList(raw.mustHaves).filter((id) => MUST_IDS.has(id)),
+    savedAt: new Date().toISOString(),
+  };
+  if (!wantsCommercial(draft)) {
+    draft.use = null;
+    draft.size = null;
+    draft.concept = "";
+  }
+  if (!wantsHome(draft)) {
+    draft.beds = null;
+    draft.household = null;
+    draft.pets = null;
+    draft.homeBudget = null;
+  }
+  if (leaseKind !== "both") draft.homeBudget = null;
+  if (wantsCommercial(draft) && !draft.use) return null;
+  if (wantsHome(draft) && !draft.beds) return null;
+  if (!draft.timing) return null;
+  if (wantsCommercial(draft) && !draft.budget) return null;
+  if (leaseKind === "residential" && !draft.budget) return null;
+  if (leaseKind === "both" && !draft.homeBudget) return null;
+  return draft;
+}
+
+export function profileBrief(profile: RenterProfile): ProfileBrief {
+  const rows: Omit<ProfilePriority, "rank">[] = [];
+  const push = (field: string, value: string | null | undefined, use: ProfileUse) => {
+    if (!value) return;
+    rows.push({ field, value, use });
+  };
+  push("lease", labelOf(LEASE_KINDS, profile.leaseKind), "context");
+  if (wantsCommercial(profile)) {
+    push("business use", labelOf(COMMERCIAL_USES, profile.use), profile.use && FIT_USES.has(profile.use) ? "filter" : "context");
+  }
+  if (wantsHome(profile)) push("bedrooms", labelOf(BEDS, profile.beds), "context");
+  push("neighborhoods", profile.neighborhoods.join(", "), profile.neighborhoods.length ? "filter" : "context");
+  push("boroughs", profile.boroughs.join(", "), "filter");
+  const timing = TIMINGS.find((item) => item.id === profile.timing);
+  push(
+    "timing",
+    timing ? (timing.months ? `${timing.label} (${timing.months} months)` : timing.label) : null,
+    timing?.months ? "filter" : "context",
+  );
+  if (profile.nearSubway === true) push("subway", "Near a subway", "filter");
+  else if (profile.nearSubway === false) push("subway", "No subway preference", "context");
+  if (profile.size && profile.size !== "unsure") push("size", labelOf(SIZE_BANDS, profile.size), "compare");
+  const businessBudgets = profile.leaseKind === "residential" ? HOME_BUDGETS : COMMERCIAL_BUDGETS;
+  if (profile.budget && profile.budget !== "unsure") push("budget", labelOf(businessBudgets, profile.budget), "context");
+  if (profile.homeBudget && profile.homeBudget !== "unsure") push("home budget", labelOf(HOME_BUDGETS, profile.homeBudget), "context");
+  push("household", labelOf(HOUSEHOLDS, profile.household), "context");
+  push("pets", labelOf(PETS, profile.pets), "context");
+  push("concept", profile.concept.trim(), "context");
+  const musts = [...COMMERCIAL_MUSTS, ...HOME_MUSTS].filter((item) => profile.mustHaves.includes(item.id)).map((item) => item.label);
+  push("must-haves", musts.join(", "), "context");
+  return {
+    version: 1,
+    leaseKind: profile.leaseKind ?? "",
+    concept: profile.concept.trim() || null,
+    priorities: rows.map((row, index) => ({ rank: index + 1, ...row })),
+  };
+}
+
+export function sortByProfile<T extends Summary>(profile: RenterProfile, results: T[]) {
+  return [...results].sort((a, b) => profileRank(profile, b) - profileRank(profile, a));
+}
+
+export function applySuggestedOrder<T extends { id: string }>(fallback: T[], order: string[]) {
+  const byId = new Map(fallback.map((item) => [item.id, item]));
+  const seen = new Set<string>();
+  const ordered: T[] = [];
+  for (const id of order) {
+    const item = byId.get(id);
+    if (!item || seen.has(id)) continue;
+    seen.add(id);
+    ordered.push(item);
+  }
+  for (const item of fallback) {
+    if (!seen.has(item.id)) ordered.push(item);
+  }
+  return ordered;
+}
+
 export function stepError(profile: RenterProfile, step: number): string {
   if (step === 0 && !profile.leaseKind) return "Choose what you are leasing.";
   if (step === 1) {

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { rankForProfile, interpretSearch, summarizeRecords } from "@/lib/gemini";
 import { describeFilters, emptyFilters } from "@/lib/parseQuery";
-import { interpretSearch, summarizeRecords } from "@/lib/gemini";
-import { searchStorefronts } from "@/lib/queries";
+import { profileToFilters } from "@/lib/profile";
+import { loadRenterProfile, searchStorefronts } from "@/lib/queries";
 import type { SearchFilters } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -24,20 +25,41 @@ function cleanFilters(input: Partial<SearchFilters> | undefined, base: SearchFil
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { query?: string; filters?: Partial<SearchFilters>; summarize?: boolean };
+    const body = (await request.json()) as {
+      query?: string;
+      filters?: Partial<SearchFilters>;
+      summarize?: boolean;
+      sessionId?: string;
+      fromProfile?: boolean;
+    };
+    const sessionId = typeof body.sessionId === "string" && /^[A-Za-z0-9_-]{1,80}$/.test(body.sessionId.trim())
+      ? body.sessionId.trim()
+      : "";
+    const saved = body.fromProfile && sessionId ? await loadRenterProfile(sessionId) : null;
     let source: "gemini" | "local" | "filters" = "filters";
     let filters = emptyFilters();
-    if (body.query?.trim()) {
+    if (saved) {
+      filters = profileToFilters(saved.profile);
+    } else if (body.query?.trim()) {
       const interpreted = await interpretSearch(body.query.trim());
       filters = interpreted.filters;
       source = interpreted.source;
     }
-    filters = cleanFilters(body.filters, filters);
-    const results = await searchStorefronts(filters);
+    if (!saved) filters = cleanFilters(body.filters, filters);
+    let results = await searchStorefronts(filters);
+    let rankSource: "gemini" | "profile" | null = null;
+    let matchReasons: Record<string, string> = {};
     const interpretation = describeFilters(filters, results.length);
     let summary: string | null = null;
     let summarySource: "gemini" | "template" | null = null;
-    if (body.summarize && results.length) {
+    if (saved && results.length) {
+      const ranked = await rankForProfile(saved.profile, results);
+      results = ranked.results;
+      rankSource = ranked.source;
+      matchReasons = ranked.reasons;
+      summary = ranked.summary;
+      summarySource = ranked.source === "gemini" && ranked.summary ? "gemini" : "template";
+    } else if (body.summarize && results.length) {
       const sample = results.slice(0, 5).map((result) => ({
         address: result.address,
         neighborhood: result.neighborhood,
@@ -52,7 +74,17 @@ export async function POST(request: Request) {
       );
       summarySource = summary ? "gemini" : "template";
     }
-    return NextResponse.json({ filters, interpretation, interpreter: source, summary, summarySource, results });
+    return NextResponse.json({
+      filters,
+      interpretation,
+      interpreter: source,
+      summary,
+      summarySource,
+      results,
+      rankSource,
+      matchReasons,
+      profileBrief: saved?.brief ?? null,
+    });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Search failed" }, { status: 500 });
   }

@@ -1,7 +1,8 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { BOROUGHS, CATEGORIES, NEIGHBORHOODS } from "./catalog";
 import { emptyFilters, parseQuery } from "./parseQuery";
-import type { SearchFilters } from "./types";
+import { applySuggestedOrder, profileBrief, sortByProfile, type RenterProfile } from "./profile";
+import type { SearchFilters, Summary } from "./types";
 
 export function geminiConfigured() {
   return Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY);
@@ -88,6 +89,64 @@ export function grounded(text: string, source: string) {
   if (years.some((year) => !source.includes(year))) return false;
   if (text.includes("$") && !source.includes("$")) return false;
   return true;
+}
+
+function compactRecord(result: Summary) {
+  return {
+    id: result.id,
+    address: result.address,
+    neighborhood: result.neighborhood,
+    borough: result.borough,
+    reportingYear: result.reportingYear,
+    turnoverScore: result.turnoverScore,
+    fitScore: result.fitScore,
+    retailArea: result.retailArea,
+    availability: result.availability.label,
+    signals: result.topSignals.map((signal) => signal.label),
+  };
+}
+
+export async function rankForProfile(profile: RenterProfile, results: Summary[]) {
+  const fallback = sortByProfile(profile, results);
+  const brief = profileBrief(profile);
+  const sample = fallback.slice(0, 25).map(compactRecord);
+  const raw = await generate(
+    `Rank these already-retrieved NYC storefront records for the renter profile.
+The priorities array is sorted. Rank 1 matters most.
+Fields marked use=filter were already applied in the database query.
+Fields marked use=compare may change order only when that record includes the field.
+Fields marked use=context are about the renter. Do not treat them as facts about a property.
+Do not invent rent, bedrooms, pets, lease dates, or addresses.
+Return JSON with keys order (array of ids from the records only), reasons (object of id to one sentence), and summary (under 70 words).
+Every id in order must come from the records. Mention a retail area only when retailArea is a number.
+Profile: ${JSON.stringify(brief)}
+Records: ${JSON.stringify(sample)}`,
+    true,
+  );
+  if (!raw) return { results: fallback, reasons: {} as Record<string, string>, summary: null as string | null, source: "profile" as const };
+  try {
+    const parsed = JSON.parse(raw) as { order?: unknown; reasons?: unknown; summary?: unknown };
+    const order = asStringArray(parsed.order).filter((id) => sample.some((record) => record.id === id));
+    if (order.length < Math.min(3, sample.length)) {
+      return { results: fallback, reasons: {}, summary: null, source: "profile" as const };
+    }
+    const reasons: Record<string, string> = {};
+    const reasonMap = parsed.reasons && typeof parsed.reasons === "object" ? (parsed.reasons as Record<string, unknown>) : {};
+    for (const record of sample) {
+      const text = reasonMap[record.id];
+      if (typeof text !== "string") continue;
+      const trimmed = text.trim().slice(0, 280);
+      if (!trimmed || trimmed.includes("$")) continue;
+      if (!grounded(trimmed, JSON.stringify(record))) continue;
+      if (sample.some((other) => other.id !== record.id && other.address && trimmed.includes(other.address))) continue;
+      reasons[record.id] = trimmed;
+    }
+    const summaryText = typeof parsed.summary === "string" ? parsed.summary.trim() : "";
+    const summary = summaryText && grounded(summaryText, JSON.stringify({ brief, sample })) ? summaryText : null;
+    return { results: applySuggestedOrder(fallback, order), reasons, summary, source: "gemini" as const };
+  } catch {
+    return { results: fallback, reasons: {}, summary: null, source: "profile" as const };
+  }
 }
 
 export async function summarizeRecords(instruction: string, records: unknown) {

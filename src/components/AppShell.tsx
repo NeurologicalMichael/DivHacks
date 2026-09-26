@@ -10,7 +10,6 @@ import {
   profileHeadline,
   profileLimits,
   profileNotes,
-  profileRank,
   profileSentence,
   profileToFilters,
   saveProfile,
@@ -79,6 +78,8 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
   const [profile, setProfile] = useState<RenterProfile | null>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [usingProfile, setUsingProfile] = useState(false);
+  const [rankSource, setRankSource] = useState<"gemini" | "profile" | null>(null);
+  const [matchReasons, setMatchReasons] = useState<Record<string, string>>({});
 
   const search = useCallback(async (nextQuery: string, keepMode = false, options?: { filters?: Partial<SearchFilters>; fromProfile?: boolean }) => {
     setLoading(true);
@@ -93,7 +94,13 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
       const response = await fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: nextQuery, summarize: true, filters: options?.filters }),
+        body: JSON.stringify({
+          query: nextQuery,
+          summarize: !options?.fromProfile,
+          filters: options?.filters,
+          sessionId: sessionId(),
+          fromProfile: Boolean(options?.fromProfile),
+        }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Search failed");
@@ -103,6 +110,8 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
       setInterpreter(payload.interpreter);
       setSummary(payload.summary);
       setUsingProfile(Boolean(options?.fromProfile));
+      setRankSource(payload.rankSource ?? null);
+      setMatchReasons(payload.matchReasons ?? {});
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Search failed");
     } finally {
@@ -146,34 +155,65 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
     fetch("/api/gap").then((response) => response.json()).then((payload) => {
       setGapNeighborhoods(payload.neighborhoods ?? []);
     }).catch(() => undefined);
-    const saved = loadProfile();
-    if (saved) {
-      setProfile(saved);
-      const sentence = profileSentence(saved);
-      setQuery(sentence);
-      search(sentence, false, { filters: profileToFilters(saved), fromProfile: true }).catch(() => undefined);
-      return;
-    }
-    if (window.localStorage.getItem(PROFILE_SKIP_KEY) === "1") {
-      search(EXAMPLE).catch(() => undefined);
-      return;
-    }
-    setOnboardingOpen(true);
+    let cancelled = false;
+    (async () => {
+      const id = sessionId();
+      let saved = loadProfile();
+      try {
+        const response = await fetch(`/api/profile?sessionId=${encodeURIComponent(id)}`);
+        const payload = await response.json();
+        if (payload.profile) {
+          saved = payload.profile;
+          saveProfile(payload.profile);
+        } else if (saved) {
+          await fetch("/api/profile", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId: id, profile: saved }),
+          });
+        }
+      } catch {
+        // Keep the browser copy if the database is unreachable.
+      }
+      if (cancelled) return;
+      if (saved) {
+        setProfile(saved);
+        const sentence = profileSentence(saved);
+        setQuery(sentence);
+        search(sentence, false, { filters: profileToFilters(saved), fromProfile: true }).catch(() => undefined);
+        return;
+      }
+      if (window.localStorage.getItem(PROFILE_SKIP_KEY) === "1") {
+        search(EXAMPLE).catch(() => undefined);
+        return;
+      }
+      setOnboardingOpen(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [search]);
-
-  const ranked = useMemo(
-    () => (usingProfile && profile ? [...results].sort((a, b) => profileRank(profile, b) - profileRank(profile, a)) : results),
-    [results, profile, usingProfile],
-  );
 
   function applyProfile(next: RenterProfile) {
     saveProfile(next);
     window.localStorage.removeItem(PROFILE_SKIP_KEY);
     setProfile(next);
     setOnboardingOpen(false);
-    const sentence = profileSentence(next);
-    setQuery(sentence);
-    search(sentence, false, { filters: profileToFilters(next), fromProfile: true }).catch((caught) => setError(caught.message));
+    void (async () => {
+      const response = await fetch("/api/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: sessionId(), profile: next }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Could not save profile");
+      const stored = payload.profile as RenterProfile;
+      saveProfile(stored);
+      setProfile(stored);
+      const sentence = profileSentence(stored);
+      setQuery(sentence);
+      await search(sentence, false, { filters: profileToFilters(stored), fromProfile: true });
+    })().catch((caught) => setError(caught instanceof Error ? caught.message : "Could not save profile"));
   }
 
   const pins = useMemo<Pin[]>(
@@ -247,7 +287,12 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
             {usingProfile && profile && (
               <div className="summary-note">
                 <strong>{profileHeadline(profile)}</strong>
-                <p className="disclaimer">{profileLimits(profile)}{profile.concept ? ` Concept: ${profile.concept}.` : ""}</p>
+                <p className="disclaimer">
+                  {rankSource === "gemini"
+                    ? "Gemini ranked these from your saved profile. It only reordered filings the database already returned."
+                    : "Your profile is saved. Gemini is not configured, so these filings are ordered from the sorted profile priorities."}
+                  {" "}{profileLimits(profile)}{profile.concept ? ` Concept: ${profile.concept}.` : ""}
+                </p>
               </div>
             )}
             {summary && <div className="summary-note"><strong>Gemini, from the matched rows.</strong> {summary}</div>}
@@ -255,7 +300,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
           </>
         )}
         <div className="panel-scroll">
-          {mode === "explore" && !detail && ranked.map((result, index) => (
+          {mode === "explore" && !detail && results.map((result, index) => (
             <button className={`card${result.id === selectedId ? " active" : ""}`} style={{ animationDelay: `${index * 0.03}s` }} key={result.id} onClick={() => openStorefront(result.id, filters?.category ?? null).catch((caught) => setError(caught.message))}>
               <div className="card-top">
                 <div>
@@ -268,8 +313,8 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
                 </div>
               </div>
               <p className="avail">{result.availability.label}</p>
-              {usingProfile && profile && profileNotes(profile, result).length > 0 && (
-                <p className="disclaimer">{profileNotes(profile, result).join(" · ")}</p>
+              {(matchReasons[result.id] || (usingProfile && profile && profileNotes(profile, result).length > 0)) && (
+                <p className="disclaimer">{matchReasons[result.id] ?? (profile ? profileNotes(profile, result).join(" · ") : "")}</p>
               )}
               <div className="signal-row">
                 {result.topSignals.map((signal) => (

@@ -240,6 +240,25 @@ CREATE TABLE owner_watches (
   UNIQUE (session_id, property_id)
 );
 
+CREATE TABLE renter_profiles (
+  session_id TEXT PRIMARY KEY,
+  lease_kind TEXT NOT NULL,
+  commercial_use TEXT,
+  beds TEXT,
+  budget TEXT,
+  home_budget TEXT,
+  size_band TEXT,
+  timing TEXT,
+  near_subway BOOLEAN,
+  boroughs TEXT[] NOT NULL DEFAULT '{}',
+  neighborhoods TEXT[] NOT NULL DEFAULT '{}',
+  must_haves TEXT[] NOT NULL DEFAULT '{}',
+  concept TEXT,
+  profile JSONB NOT NULL,
+  brief JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE signals (
   id BIGSERIAL PRIMARY KEY,
   property_id TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
