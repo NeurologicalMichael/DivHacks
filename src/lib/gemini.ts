@@ -75,6 +75,9 @@ If the person asks for availability within N months, set months to N. Vacancy on
     filters.multiSignal = Boolean(parsed.multiSignal);
     filters.landlordOnly = Boolean(parsed.landlordOnly);
     filters.address = typeof parsed.address === "string" ? parsed.address : local.address;
+    // Prefer local parse when the model drops place filters the query clearly named.
+    if (!filters.boroughs.length && local.boroughs.length) filters.boroughs = local.boroughs;
+    if (!filters.neighborhoods.length && local.neighborhoods.length) filters.neighborhoods = local.neighborhoods;
     if (!filters.boroughs.length && !filters.neighborhoods.length && !filters.category && filters.months == null) {
       return { filters: local, source: "local" };
     }

@@ -36,7 +36,7 @@ export function OwnerPanel({
       {watches.map((watch) => (
         <article className="block" key={watch.propertyId}>
           <button className="back" onClick={() => onOpen(watch.propertyId)}>{titleAddress(watch.address)}</button>
-          <div className="sub">{watch.neighborhood} · turnover index {watch.turnoverScore}</div>
+          <div className="sub">{watch.neighborhood} · Store Score {watch.turnoverScore}</div>
           <div className="kicker">Within 500 meters</div>
           {watch.nearby.length === 0 && <p className="empty">No other loaded signals fall inside 500 meters.</p>}
           {watch.nearby.map((item) => (

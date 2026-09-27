@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { categoryLabel } from "@/lib/catalog";
 import { formatDate, formatMeters, formatMoney, titleAddress } from "@/lib/format";
-import { METRIC_DEFS, buildMetricStates, enabledTotal } from "@/lib/signals";
+import { METRIC_DEFS, buildMetricStates, enabledTotal, type WeightMap } from "@/lib/signals";
 import type { StorefrontDetail } from "@/lib/types";
 import { MetricsDonut, ScorePair } from "./MetricsDonut";
 
@@ -80,14 +80,19 @@ export function DetailPanel({
   busy,
   onExplain,
   showAiSummary = true,
+  signalWeights,
 }: {
   detail: StorefrontDetail;
   explanation: { text: string; source: string } | null;
   busy: boolean;
   onExplain: () => void;
   showAiSummary?: boolean;
+  signalWeights?: WeightMap;
 }) {
-  const metrics = useMemo(() => buildMetricStates(detail.signals), [detail.signals]);
+  const metrics = useMemo(
+    () => buildMetricStates(detail.signals, signalWeights),
+    [detail.signals, signalWeights],
+  );
   const [showAllFlags, setShowAllFlags] = useState(false);
   const [showFullHistory, setShowFullHistory] = useState(false);
   const [mixOpen, setMixOpen] = useState(true);
@@ -189,7 +194,7 @@ export function DetailPanel({
             </button>
           </header>
           <p className="scoring-lead">
-            These public-record signals add up to <strong>{turnover}</strong> turnover points.
+            These public-record signals add up to <strong>{turnover}</strong> Store Score points.
           </p>
           <MetricsDonut metrics={metrics} />
         </div>
@@ -200,7 +205,7 @@ export function DetailPanel({
           <h3>Why it was flagged</h3>
           <span>{flagged.length} signal{flagged.length === 1 ? "" : "s"}</span>
         </header>
-        {flagged.length === 0 && <p className="empty">No turnover signals for this storefront.</p>}
+        {flagged.length === 0 && <p className="empty">No Store Score signals for this storefront.</p>}
         <ul className="flag-list">
           {visibleFlags.map((flag) => (
             <li key={flag.id}>
@@ -229,7 +234,14 @@ export function DetailPanel({
                   <div>
                     <strong>{event.title}</strong>
                     {event.subjectDate && event.subjectDate !== event.occurredAt && (
-                      <span className="sub">Reported date on file: {formatDate(event.subjectDate)}</span>
+                      <span className="sub">
+                        {/license/i.test(event.title)
+                          ? "Expiration on file"
+                          : /lease/i.test(event.title)
+                            ? "Lease end on file"
+                            : "Reported date on file"}
+                        : {formatDate(event.subjectDate)}
+                      </span>
                     )}
                     <span className="sub">{event.source}</span>
                   </div>

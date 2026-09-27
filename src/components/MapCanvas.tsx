@@ -3,6 +3,7 @@
 import L from "leaflet";
 import { useEffect, useRef } from "react";
 import "leaflet/dist/leaflet.css";
+import { STORE_SCORE_HELP, STORE_SCORE_LABEL } from "@/lib/signals";
 import { turnoverScaleColor } from "@/lib/turnoverColor";
 
 export type Pin = {
@@ -14,7 +15,6 @@ export type Pin = {
   label?: string;
 };
 
-const MAX_PINS = 28;
 const NYC: L.LatLngExpression = [40.7128, -73.97];
 
 export { turnoverScaleColor };
@@ -124,23 +124,16 @@ export default function MapCanvas({
 
     group.clearLayers();
 
-    const sorted = [...pins].sort((a, b) => b.turnover - a.turnover);
-    const pinsToDraw =
-      sorted.length > MAX_PINS
-        ? [
-            ...sorted.filter((p) => p.active),
-            ...sorted.filter((p) => !p.active).slice(0, MAX_PINS - (sorted.some((p) => p.active) ? 1 : 0)),
-          ]
-        : sorted;
-
-    pinsToDraw.forEach((pin) => {
+    // Draw every result pin — a low cap was hiding lower-turnover boroughs (e.g. Manhattan)
+    // when the unfiltered list was dominated by Brooklyn.
+    pins.forEach((pin) => {
       if (!Number.isFinite(pin.lat) || !Number.isFinite(pin.lng)) return;
 
       const size = sizeFor(pin);
       const color = turnoverScaleColor(pin.turnover);
       const icon = L.divIcon({
         className: "ll-marker",
-        html: `<button type="button" class="pin-dot${pin.active ? " is-active" : ""}" style="width:${size}px;height:${size}px;background:${color}" aria-label="${escapeHtml(pin.active ? pin.label ?? "Selected storefront" : `Turnover ${pin.turnover}`)}"></button>`,
+        html: `<button type="button" class="pin-dot${pin.active ? " is-active" : ""}" style="width:${size}px;height:${size}px;background:${color}" aria-label="${escapeHtml(pin.active ? pin.label ?? "Selected storefront" : `${STORE_SCORE_LABEL} ${pin.turnover}`)}"></button>`,
         iconSize: [size + 4, size + 4],
         iconAnchor: [size / 2, size / 2],
       });
@@ -187,8 +180,10 @@ export default function MapCanvas({
   return (
     <div className="map-shell">
       <div ref={container} className="map-root" role="application" aria-label="Storefront map" />
-      <aside className="map-legend" aria-label="Turnover scale">
-        <span className="map-legend-label">Turnover</span>
+      <aside className="map-legend" aria-label={`${STORE_SCORE_LABEL} scale`}>
+        <span className="map-legend-label label-tip" title={STORE_SCORE_HELP} tabIndex={0}>
+          {STORE_SCORE_LABEL}
+        </span>
         <span className="map-legend-bar" />
         <span className="map-legend-ends">
           <i>Low</i>

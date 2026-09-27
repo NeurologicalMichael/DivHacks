@@ -1,10 +1,27 @@
 import fs from "node:fs";
 import path from "node:path";
 import { availabilityFor } from "./availability";
+import { matchesPlaceFilter } from "./catalog";
 import { toIsoDate } from "./format";
 import { matchMetric } from "./signals";
 import { mergePermitEvents, normalizeTimeline } from "./timeline";
 import type { BreakdownItem, Gap, SearchFilters, Signal, StorefrontDetail, Summary } from "./types";
+
+/** No place / availability / score constraints — return every loaded filing. */
+function isUnfilteredSearch(filters: SearchFilters) {
+  return (
+    filters.boroughs.length === 0 &&
+    filters.neighborhoods.length === 0 &&
+    !filters.category &&
+    filters.months == null &&
+    filters.minTurnover <= 0 &&
+    !filters.vacantOnly &&
+    !filters.nearSubway &&
+    !filters.multiSignal &&
+    !filters.landlordOnly &&
+    !filters.address
+  );
+}
 
 type Prop = Record<string, unknown>;
 type Snapshot = {
@@ -373,21 +390,14 @@ export function snapshotHealth() {
 export function snapshotSearch(filters: SearchFilters): Summary[] {
   const snap = loadSnapshot();
   const category = filters.category ?? "storefront";
-  const fitFloor = filters.category ? 40 : 0;
+  const open = isUnfilteredSearch(filters);
+  const fitFloor = !open && filters.category ? 40 : 0;
   let rows = snap.properties.map((p) => toSummary(p, category, snap));
 
-  if (filters.boroughs.length && filters.neighborhoods.length) {
-    const boroughs = new Set(filters.boroughs.map((b) => b.toLowerCase()));
-    const neighborhoods = new Set(filters.neighborhoods.map((n) => n.toLowerCase()));
-    rows = rows.filter(
-      (r) => boroughs.has(r.borough.toLowerCase()) || neighborhoods.has(r.neighborhood.toLowerCase()),
+  if (filters.boroughs.length || filters.neighborhoods.length) {
+    rows = rows.filter((r) =>
+      matchesPlaceFilter(r.borough, r.neighborhood, filters.boroughs, filters.neighborhoods),
     );
-  } else if (filters.boroughs.length) {
-    const set = new Set(filters.boroughs.map((b) => b.toLowerCase()));
-    rows = rows.filter((r) => set.has(r.borough.toLowerCase()));
-  } else if (filters.neighborhoods.length) {
-    const set = new Set(filters.neighborhoods.map((n) => n.toLowerCase()));
-    rows = rows.filter((r) => set.has(r.neighborhood.toLowerCase()));
   }
   if (filters.minTurnover > 0) rows = rows.filter((r) => r.turnoverScore >= filters.minTurnover);
   if (filters.vacantOnly) rows = rows.filter((r) => r.vacant);
@@ -415,10 +425,10 @@ export function snapshotSearch(filters: SearchFilters): Summary[] {
     });
   }
 
-  return rows
+  const ranked = rows
     .filter((r) => r.fitScore >= fitFloor)
-    .sort((a, b) => b.fitScore - a.fitScore || b.turnoverScore - a.turnoverScore)
-    .slice(0, 70);
+    .sort((a, b) => b.fitScore - a.fitScore || b.turnoverScore - a.turnoverScore);
+  return open ? ranked : ranked.slice(0, 500);
 }
 
 export function snapshotGetStorefront(id: string, category: string | null): StorefrontDetail | null {

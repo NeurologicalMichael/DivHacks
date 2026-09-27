@@ -40,14 +40,14 @@ export async function POST(request: Request) {
     const saved = body.fromProfile && sessionId ? await loadRenterProfile(sessionId) : null;
     let source: "gemini" | "local" | "filters" = "filters";
     let filters = emptyFilters();
-    if (saved) {
+    // Explicit chip/panel filters win over profile defaults and query parsing.
+    if (body.preferFilters && body.filters) {
+      filters = cleanFilters(body.filters, emptyFilters());
+      source = "filters";
+    } else if (saved) {
       filters = profileToFilters(saved.profile);
       source = "filters";
       if (body.filters) filters = cleanFilters(body.filters, filters);
-    } else if (body.preferFilters && body.filters) {
-      // Edit-filter panel: trust the chip state, ignore leftover "restaurant-ready" query text.
-      filters = cleanFilters(body.filters, emptyFilters());
-      source = "filters";
     } else if (body.query?.trim()) {
       const interpreted = await interpretSearch(body.query.trim());
       filters = interpreted.filters;

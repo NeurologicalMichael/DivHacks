@@ -106,23 +106,38 @@ export async function searchStorefronts(filters: SearchFilters) {
 async function searchStorefrontsDb(filters: SearchFilters) {
   const params: unknown[] = [filters.category ?? "storefront"];
   const where: string[] = [];
+  const open =
+    filters.boroughs.length === 0 &&
+    filters.neighborhoods.length === 0 &&
+    !filters.category &&
+    filters.months == null &&
+    filters.minTurnover <= 0 &&
+    !filters.vacantOnly &&
+    !filters.nearSubway &&
+    !filters.multiSignal &&
+    !filters.landlordOnly &&
+    !filters.address;
 
+  const placeClauses: string[] = [];
   if (filters.boroughs.length) {
-    params.push(filters.boroughs);
+    params.push(filters.boroughs.map((borough) => borough.toLowerCase()));
+    placeClauses.push(`lower(p.borough) = ANY($${params.length}::text[])`);
   }
   if (filters.neighborhoods.length) {
     params.push(filters.neighborhoods);
+    const neighParam = `$${params.length}::text[]`;
+    // Catalog labels are short (e.g. Chinatown); filings use NTAs (Chinatown-Two Bridges).
+    placeClauses.push(`EXISTS (
+      SELECT 1 FROM unnest(${neighParam}) AS sel(name)
+      WHERE lower(p.neighborhood) = lower(sel.name)
+         OR lower(p.neighborhood) LIKE lower(sel.name) || '-%'
+         OR lower(p.neighborhood) LIKE lower(sel.name) || ' (%'
+         OR lower(p.neighborhood) LIKE lower(sel.name) || ' %'
+    )`);
   }
-  if (filters.boroughs.length && filters.neighborhoods.length) {
-    const boroughParam = params.length - 1; // neighborhoods is last, boroughs is second-to-last
-    const neighborhoodParam = params.length;
-    // Match either selected boroughs or selected neighborhoods (not required to satisfy both).
-    where.push(`(p.borough = ANY($${boroughParam}) OR p.neighborhood = ANY($${neighborhoodParam}))`);
-  } else if (filters.boroughs.length) {
-    where.push(`p.borough = ANY($${params.length})`);
-  } else if (filters.neighborhoods.length) {
-    where.push(`p.neighborhood = ANY($${params.length})`);
-  }
+  if (placeClauses.length === 1) where.push(placeClauses[0]!);
+  else if (placeClauses.length > 1) where.push(`(${placeClauses.join(" OR ")})`);
+
   if (filters.minTurnover > 0) {
     params.push(filters.minTurnover);
     where.push(`p.turnover_score >= $${params.length}`);
@@ -163,9 +178,10 @@ async function searchStorefrontsDb(filters: SearchFilters) {
     )`);
   }
 
-  params.push(filters.category ? 40 : 0);
+  params.push(open ? 0 : filters.category ? 40 : 0);
   const fitFloor = `$${params.length}`;
-  params.push(70);
+  const limitSql = open ? "" : ` LIMIT $${params.length + 1}`;
+  if (!open) params.push(500);
 
   const rows = await query<Row>(
     `WITH scored AS (
@@ -201,7 +217,7 @@ async function searchStorefrontsDb(filters: SearchFilters) {
      ) ranked
      WHERE fit_score >= ${fitFloor}
      ORDER BY fit_score DESC, turnover_score DESC, address
-     LIMIT $${params.length}`,
+     ${limitSql}`,
     params,
   );
 

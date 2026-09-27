@@ -1,27 +1,10 @@
-import { BOROUGHS, NEIGHBORHOODS, categoryLabel } from "./catalog";
+import { BOROUGHS, NEIGHBORHOODS, NEIGHBORHOOD_BOROUGH, categoryLabel } from "./catalog";
 import type { SearchFilters, Summary } from "./types";
 
 export const PROFILE_KEY = "leaselens-renter-profile";
 export const PROFILE_SKIP_KEY = "leaselens-onboarding-skipped";
 
-export const NEIGHBORHOOD_BOROUGH: Record<string, string> = {
-  Williamsburg: "Brooklyn",
-  Greenpoint: "Brooklyn",
-  Bushwick: "Brooklyn",
-  "Park Slope": "Brooklyn",
-  "Carroll Gardens": "Brooklyn",
-  DUMBO: "Brooklyn",
-  "Brooklyn Heights": "Brooklyn",
-  "Fort Greene": "Brooklyn",
-  "Clinton Hill": "Brooklyn",
-  "Bed-Stuy": "Brooklyn",
-  "Crown Heights": "Brooklyn",
-  "Prospect Heights": "Brooklyn",
-  Astoria: "Queens",
-  "Long Island City": "Queens",
-  Chinatown: "Manhattan",
-  SoHo: "Manhattan",
-};
+export { NEIGHBORHOOD_BOROUGH };
 
 export type LeaseKind = "commercial" | "residential" | "both";
 export type CommercialUse =

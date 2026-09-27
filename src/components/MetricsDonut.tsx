@@ -3,13 +3,15 @@
 import { useId } from "react";
 import {
   METRIC_DEFS,
+  STORE_SCORE_HELP,
+  STORE_SCORE_LABEL,
   enabledTotal,
   fitLabel,
   metricLabel,
   turnoverLabel,
   type MetricState,
 } from "@/lib/signals";
-import { TURNOVER_GRADIENT, turnoverScaleColor } from "@/lib/turnoverColor";
+import { TURNOVER_GRADIENT } from "@/lib/turnoverColor";
 
 const EXTRA_COLORS = ["#64748B", "#0EA5E9", "#A855F7", "#F43F5E", "#14B8A6"];
 
@@ -25,33 +27,28 @@ function rationaleFor(metric: MetricState) {
   );
 }
 
-/** Semi-circle gauge. Turnover uses the same orange→yellow→green scale as map dots. */
+/** Semi-circle gauge. Uses the same orange→yellow→green scale as map dots. */
 function SemiGauge({
   value,
   label,
-  mode,
 }: {
   value: number;
   label: string;
-  mode: "turnover" | "fit";
 }) {
   const display = Math.max(0, value);
   const fill = Math.min(100, display) / 100;
   const gradId = useId();
-  const stroke = mode === "turnover" ? `url(#${gradId})` : turnoverScaleColor(Math.min(100, display));
 
   return (
     <div className="gauge">
       <svg viewBox="0 0 108 68" aria-hidden="true">
-        {mode === "turnover" && (
-          <defs>
-            <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor={TURNOVER_GRADIENT.low} />
-              <stop offset="50%" stopColor={TURNOVER_GRADIENT.mid} />
-              <stop offset="100%" stopColor={TURNOVER_GRADIENT.high} />
-            </linearGradient>
-          </defs>
-        )}
+        <defs>
+          <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor={TURNOVER_GRADIENT.low} />
+            <stop offset="50%" stopColor={TURNOVER_GRADIENT.mid} />
+            <stop offset="100%" stopColor={TURNOVER_GRADIENT.high} />
+          </linearGradient>
+        </defs>
         <path
           className="gauge-track"
           d="M 12 58 A 42 42 0 0 1 96 58"
@@ -65,7 +62,7 @@ function SemiGauge({
           className="gauge-value"
           d="M 12 58 A 42 42 0 0 1 96 58"
           fill="none"
-          stroke={stroke}
+          stroke={`url(#${gradId})`}
           strokeWidth="8"
           strokeLinecap="round"
           pathLength={100}
@@ -94,7 +91,7 @@ export function MetricsDonut({ metrics }: { metrics: MetricState[] }) {
 
   return (
     <div className="donut-wrap">
-      <svg viewBox={`0 0 ${size} ${size}`} className="donut" aria-label={`Turnover score ${total} points`}>
+      <svg viewBox={`0 0 ${size} ${size}`} className="donut" aria-label={`${STORE_SCORE_LABEL} ${total} points`}>
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#E8E8E8" strokeWidth={stroke} />
         {enabled.map((metric, index) => {
           const len = (metric.weight / scale) * circ;
@@ -158,12 +155,16 @@ export function ScorePair({
   return (
     <div className="score-pair-row">
       <div className="score-card">
-        <p className="score-card-kicker">Turnover</p>
-        <SemiGauge value={turnover} label={turnoverLabel(turnover)} mode="turnover" />
+        <p className="score-card-kicker">
+          <span className="label-tip" title={STORE_SCORE_HELP} tabIndex={0}>
+            {STORE_SCORE_LABEL}
+          </span>
+        </p>
+        <SemiGauge value={turnover} label={turnoverLabel(turnover)} />
       </div>
       <div className="score-card">
         <p className="score-card-kicker">Fit for a {fitCategory.toLowerCase()}</p>
-        <SemiGauge value={fit} label={fitLabel(fit)} mode="fit" />
+        <SemiGauge value={fit} label={fitLabel(fit)} />
       </div>
     </div>
   );

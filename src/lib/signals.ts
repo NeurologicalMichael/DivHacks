@@ -137,6 +137,8 @@ export type MetricState = {
   observedAt?: string | null;
 };
 
+export type WeightMap = Record<MetricId, number>;
+
 export function metricLabel(metric: MetricState) {
   if (metric.label) return metric.label;
   return METRIC_DEFS.find((d) => d.id === metric.id)?.label ?? metric.id;
@@ -148,6 +150,7 @@ export function metricDef(id: string) {
 
 export function buildMetricStates(
   signals: { label: string; weight: number; evidence?: string; source?: string; observedAt?: string | null }[],
+  weights?: WeightMap,
 ): MetricState[] {
   const foundById = new Map<MetricId, (typeof signals)[number]>();
   const unmatched: MetricState[] = [];
@@ -170,11 +173,12 @@ export function buildMetricStates(
   }
   const catalog = METRIC_DEFS.map((def) => {
     const found = foundById.get(def.id);
+    const custom = weights?.[def.id];
     return {
       id: def.id,
       label: def.label,
       enabled: Boolean(found),
-      weight: found?.weight ?? def.defaultWeight,
+      weight: found ? (custom ?? found.weight ?? def.defaultWeight) : (custom ?? def.defaultWeight),
       found: Boolean(found),
       evidence: found?.evidence,
       source: found?.source,
@@ -186,6 +190,59 @@ export function buildMetricStates(
 
 export function enabledTotal(metrics: MetricState[]) {
   return metrics.filter((m) => m.enabled).reduce((sum, m) => sum + m.weight, 0);
+}
+
+export const SIGNAL_WEIGHTS_KEY = "leaselens-signal-weights";
+
+export function defaultWeights(): WeightMap {
+  return Object.fromEntries(METRIC_DEFS.map((def) => [def.id, def.defaultWeight])) as WeightMap;
+}
+
+export function loadWeights(): WeightMap {
+  if (typeof window === "undefined") return defaultWeights();
+  try {
+    const raw = window.localStorage.getItem(SIGNAL_WEIGHTS_KEY);
+    if (!raw) return defaultWeights();
+    const parsed = JSON.parse(raw) as Partial<Record<MetricId, number>>;
+    const defaults = defaultWeights();
+    for (const def of METRIC_DEFS) {
+      const value = parsed[def.id];
+      if (typeof value === "number" && Number.isFinite(value)) {
+        defaults[def.id] = Math.max(def.min, Math.min(def.max, Math.round(value)));
+      }
+    }
+    return defaults;
+  } catch {
+    return defaultWeights();
+  }
+}
+
+export function saveWeights(weights: WeightMap) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(SIGNAL_WEIGHTS_KEY, JSON.stringify(weights));
+}
+
+export function weightsAreDefault(weights: WeightMap) {
+  return METRIC_DEFS.every((def) => weights[def.id] === def.defaultWeight);
+}
+
+export function scoreMetricIds(metricIds: string[], weights: WeightMap) {
+  return metricIds.reduce((sum, id) => {
+    const def = metricDef(id);
+    if (!def) return sum;
+    return sum + (weights[def.id] ?? def.defaultWeight);
+  }, 0);
+}
+
+export function scoreFromSignals(
+  signals: { label: string; weight: number }[],
+  weights: WeightMap,
+) {
+  return signals.reduce((sum, signal) => {
+    const def = matchMetric(signal.label);
+    if (!def) return sum + signal.weight;
+    return sum + (weights[def.id] ?? def.defaultWeight);
+  }, 0);
 }
 
 /** Adjust a metric weight. Totals may exceed 100. */
@@ -213,3 +270,8 @@ export function turnoverLabel(score: number) {
   if (score >= 25) return "Some evidence";
   return "Little evidence";
 }
+
+/** User-facing name + hover copy for the composite public-record score. */
+export const STORE_SCORE_LABEL = "Store Score";
+export const STORE_SCORE_HELP =
+  "How strongly public records suggest this storefront may turn over or open soon — vacancy filings, lease dates, licenses, sales, and permits, weighted by your signal settings.";

@@ -14,9 +14,18 @@ import {
   type RenterProfile,
 } from "@/lib/profile";
 import type { Gap, SearchFilters, StorefrontDetail, Summary } from "@/lib/types";
-import type { MetricId } from "@/lib/signals";
-import { matchMetric } from "@/lib/signals";
+import type { MetricId, WeightMap } from "@/lib/signals";
+import {
+  defaultWeights,
+  loadWeights,
+  matchMetric,
+  saveWeights,
+  scoreFromSignals,
+  scoreMetricIds,
+  weightsAreDefault,
+} from "@/lib/signals";
 import type { Pin } from "./MapCanvas";
+import { CustomizeSignalsModal } from "./CustomizeSignalsModal";
 import { DeskChat } from "./DeskChat";
 import { DetailPanel } from "./DetailPanel";
 import { FilterBar } from "./FilterBar";
@@ -24,7 +33,6 @@ import { GapPanel } from "./GapPanel";
 import { Landing, type Persona } from "./Landing";
 import { LandlordPanel } from "./LandlordPanel";
 import { MapMetricFilters } from "./MapMetricFilters";
-import { Onboarding } from "./Onboarding";
 import type { Watch } from "./OwnerPanel";
 import { StreetThumb } from "./StreetThumb";
 
@@ -42,12 +50,22 @@ function sessionId() {
   return created;
 }
 
-function greeting(persona: Persona | null, profile: RenterProfile | null) {
-  if (persona === "shop_owner") return "Hi, Shop Owner!";
-  if (persona === "landlord") return "Hi, Landlord!";
-  if (persona === "entrepreneur") return "Hi Entrepreneur!";
-  if (profile) return "Hi there!";
-  return "Hi!";
+function rescoreSummary(summary: Summary, weights: WeightMap): Summary {
+  if (weightsAreDefault(weights)) return summary;
+  const ids = summary.metricIds?.length
+    ? summary.metricIds
+    : [
+        ...new Set(
+          summary.topSignals
+            .map((signal) => matchMetric(signal.label)?.id)
+            .filter((id): id is NonNullable<typeof id> => id != null)
+            .map(String),
+        ),
+      ];
+  const turnoverScore = ids.length
+    ? scoreMetricIds(ids, weights)
+    : scoreFromSignals(summary.topSignals, weights);
+  return { ...summary, turnoverScore };
 }
 
 export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]; onSelect: (id: string) => void }> }) {
@@ -73,11 +91,12 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
   const [watches, setWatches] = useState<Watch[]>([]);
   const [watchNote, setWatchNote] = useState("");
   const [profile, setProfile] = useState<RenterProfile | null>(null);
-  const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [usingProfile, setUsingProfile] = useState(false);
   const [booted, setBooted] = useState(false);
   const [metricFilters, setMetricFilters] = useState<MetricId[]>([]);
   const [deskOpen, setDeskOpen] = useState(false);
+  const [signalsOpen, setSignalsOpen] = useState(false);
+  const [signalWeights, setSignalWeights] = useState<WeightMap>(() => defaultWeights());
 
   const search = useCallback(async (
     nextQuery: string,
@@ -170,6 +189,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
         // offline profile ok
       }
       if (cancelled) return;
+      setSignalWeights(loadWeights());
       if (saved) {
         setProfile(saved);
         setPersona("entrepreneur");
@@ -187,27 +207,19 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
     };
   }, [search]);
 
-  function applyProfile(next: RenterProfile) {
+  function applyProfilePrefs(next: RenterProfile) {
     saveProfile(next);
     window.localStorage.removeItem(PROFILE_SKIP_KEY);
     setProfile(next);
-    setOnboardingOpen(false);
-    setPersona("entrepreneur");
-    void (async () => {
-      await fetch("/api/profile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: sessionId(), profile: next }),
-      });
-      const sentence = profileSentence(next);
-      setQuery(sentence);
-      await search(sentence, { filters: profileToFilters(next), fromProfile: true });
-    })().catch((caught) => setError(caught instanceof Error ? caught.message : "Could not save profile"));
+    void fetch("/api/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: sessionId(), profile: next }),
+    }).catch(() => undefined);
   }
 
   function choosePersona(next: Persona) {
     setPersona(next);
-    // Load results immediately so the map/list are live behind onboarding (matches Figma).
     if (!results.length) {
       search(EXAMPLE).catch((caught) => setError(caught.message));
     }
@@ -221,26 +233,36 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
       return;
     }
     setMode("explore");
-    if (!profile) setOnboardingOpen(true);
   }
 
-  function applyFilters(next: SearchFilters) {
+  function applyFilters(next: SearchFilters, nextProfile: RenterProfile) {
+    applyProfilePrefs(nextProfile);
     setFilters(next);
     const places = [...next.boroughs, ...next.neighborhoods];
     const place = places.length ? places.join(" / ") : "NYC";
     const use = next.category ? categoryLabel(next.category).toLowerCase() : "storefront";
     const sentence = `${use} storefronts in ${place}${next.months ? ` in the next ${next.months} months` : ""}${next.nearSubway ? " near a subway" : ""}`;
     setQuery(sentence);
-    search(sentence, { filters: next, fromProfile: false, preferFilters: true }).catch((caught) => setError(caught.message));
+    search(sentence, { filters: next, fromProfile: true, preferFilters: true }).catch((caught) => setError(caught.message));
   }
 
+  function applySignalWeights(next: WeightMap) {
+    saveWeights(next);
+    setSignalWeights(next);
+  }
+
+  const scoredResults = useMemo(
+    () => results.map((result) => rescoreSummary(result, signalWeights)),
+    [results, signalWeights],
+  );
+
   const sorted = useMemo(() => {
-    const copy = [...results];
+    const copy = [...scoredResults];
     if (sortKey === "fit") copy.sort((a, b) => b.fitScore - a.fitScore);
     else if (sortKey === "name") copy.sort((a, b) => a.address.localeCompare(b.address));
     else copy.sort((a, b) => b.turnoverScore - a.turnoverScore);
     return copy;
-  }, [results, sortKey]);
+  }, [scoredResults, sortKey]);
 
   const filtered = useMemo(() => {
     if (!metricFilters.length) return sorted;
@@ -292,9 +314,6 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
           <button type="button" className="logo" onClick={() => setPersona(null)}>
             LeaseLens
           </button>
-          <button type="button" className="greeting" onClick={() => setOnboardingOpen(true)}>
-            {greeting(persona, profile)}
-          </button>
         </div>
         <form
           className="top-search"
@@ -318,13 +337,16 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
         </form>
         <div className="topbar-right">
           {loading && <span className="muted">Searching…</span>}
+          <button type="button" className="signals-customize" onClick={() => setSignalsOpen(true)}>
+            Customize signals
+          </button>
           <button type="button" className="desk-open" onClick={() => setDeskOpen(true)}>
             Desk
           </button>
         </div>
       </header>
 
-      <FilterBar filters={filters ?? emptyFilters()} onApply={applyFilters} />
+      <FilterBar filters={filters ?? emptyFilters()} profile={profile} onApply={applyFilters} />
 
       <div className="workspace">
         <aside className="rail">
@@ -332,7 +354,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
             <strong>{listTitle}</strong>
             {persona !== "shop_owner" && (
               <select aria-label="Sort results" value={sortKey} onChange={(event) => setSortKey(event.target.value as SortKey)}>
-                <option value="turnover">Turnover</option>
+                <option value="turnover">Store Score</option>
                 <option value="fit">Fit</option>
                 <option value="name">Address</option>
               </select>
@@ -436,7 +458,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
             {mode === "landlord" && (
               <LandlordPanel
                 key={selectedId ?? "landlord"}
-                options={results}
+                options={scoredResults}
                 selectedId={selectedId}
                 onSubmit={async (input) => {
                   const response = await fetch("/api/landlord", {
@@ -461,6 +483,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
                 explanation={explanation}
                 busy={explaining}
                 showAiSummary={persona === "entrepreneur"}
+                signalWeights={signalWeights}
                 onExplain={async () => {
                   setExplaining(true);
                   try {
@@ -483,7 +506,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
             {mode !== "gap" && mode !== "landlord" && !detail && (
               <div className="detail-empty">
                 <h2>Select a storefront</h2>
-                <p>Click a result or map marker to see turnover evidence, fit, and history.</p>
+                <p>Click a result or map marker to see Store Score evidence, fit, and history.</p>
               </div>
             )}
           </div>
@@ -499,18 +522,12 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
         onOpenStorefront={(id) => openStorefront(id, filters?.category ?? null).catch((caught) => setError(caught.message))}
       />
 
-      {onboardingOpen && (
-        <Onboarding
-          initial={profile}
-          onSave={applyProfile}
-          onSkip={() => {
-            window.localStorage.setItem(PROFILE_SKIP_KEY, "1");
-            setOnboardingOpen(false);
-            search(EXAMPLE).catch((caught) => setError(caught.message));
-          }}
-          onClose={profile || persona ? () => setOnboardingOpen(false) : undefined}
-        />
-      )}
+      <CustomizeSignalsModal
+        open={signalsOpen}
+        weights={signalWeights}
+        onClose={() => setSignalsOpen(false)}
+        onApply={applySignalWeights}
+      />
     </main>
   );
 }

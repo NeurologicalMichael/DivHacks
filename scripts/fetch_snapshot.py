@@ -14,7 +14,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -988,9 +988,12 @@ def main():
             )
             created = date_only(row.get("license_creation_date"))
             expiration = date_only(row.get("lic_expir_dd"))
-            if created or expiration:
-                # Anchor to issuance, not expiration — future expirations were floating to the top.
-                when = created or expiration
+            # Anchor timeline to issuance (or past expiration), never a future expiration date.
+            today = date.today().isoformat()
+            when = created if created and created <= today else None
+            if not when and expiration and expiration <= today:
+                when = expiration
+            if when:
                 events.append(
                     {
                         "property_id": pid,

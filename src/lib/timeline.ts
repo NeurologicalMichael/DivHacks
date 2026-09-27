@@ -8,7 +8,7 @@ export type TimelineEvent = {
   detail: string;
   source: string;
   provenance: string;
-  /** Subject date when different from when the event was filed/reported (e.g. lease end). */
+  /** Subject date when different from when the event was filed/reported (e.g. lease end, license expiration). */
   subjectDate?: string | null;
 };
 
@@ -31,6 +31,20 @@ function dateOnly(value: unknown) {
   return toIsoDate(value);
 }
 
+/** App "today" for clamping — ISO calendar date in local time. */
+export function timelineToday() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function notAfterToday(iso: string | null | undefined, today = timelineToday()) {
+  if (!iso) return null;
+  return iso <= today ? iso : null;
+}
+
 function filingAsOf(reportingYear: unknown) {
   const year = Number(String(reportingYear ?? "").match(/\d{4}/)?.[0] ?? NaN);
   if (!Number.isFinite(year) || year < 1990) return null;
@@ -44,11 +58,11 @@ function payloadOf(event: RawEvent) {
 }
 
 /**
- * Lease / sale-on-filing events historically stored the subject date in occurred_at,
- * which floated far-future lease ends (e.g. 2038) to the top of the timeline.
- * Re-anchor those to the filing as-of date and keep the subject date separate.
+ * Lease / sale / license rows sometimes stored the subject date (lease end, license
+ * expiration) in occurred_at — including far-future dates like 2027–2038.
+ * Re-anchor those to when the record was filed/issued and keep the subject date separate.
  */
-export function normalizeTimelineEvent(event: RawEvent): TimelineEvent | null {
+export function normalizeTimelineEvent(event: RawEvent, today = timelineToday()): TimelineEvent | null {
   const type = str(event.event_type);
   const payload = payloadOf(event);
   const title = str(event.title) || "Event";
@@ -58,19 +72,23 @@ export function normalizeTimelineEvent(event: RawEvent): TimelineEvent | null {
   const rawWhen = dateOnly(event.occurred_at ?? event.occurredAt);
 
   if (type === "lease_date_on_file" || /lease expiration/i.test(title)) {
-    const lease = dateOnly(payload.lease_expiration) ?? (/lease expiration/i.test(title) ? rawWhen : null);
+    const lease =
+      dateOnly(payload.lease_expiration) ??
+      (/lease expiration/i.test(title) && rawWhen && rawWhen > today ? rawWhen : null) ??
+      (/lease expiration/i.test(title) ? rawWhen : null);
     const filed =
-      filingAsOf(payload.reporting_year) ??
-      // If occurred_at was already a filing year-end, keep it; else fall back carefully.
-      (rawWhen && rawWhen.endsWith("-12-31") && Number(rawWhen.slice(0, 4)) <= new Date().getFullYear() + 1
-        ? rawWhen
-        : null) ??
-      filingAsOf(detail.match(/The (\d{4}) filing/)?.[1]) ??
-      rawWhen;
+      notAfterToday(filingAsOf(payload.reporting_year), today) ??
+      notAfterToday(
+        rawWhen && rawWhen.endsWith("-12-31") ? rawWhen : null,
+        today,
+      ) ??
+      notAfterToday(filingAsOf(detail.match(/The (\d{4}) filing/)?.[1]), today) ??
+      notAfterToday(rawWhen && rawWhen <= today ? rawWhen : null, today);
     if (!filed) return null;
+    const subject = lease && lease !== filed ? lease : null;
     return {
       occurredAt: filed,
-      title: lease ? "Lease expiration on file" : title,
+      title: lease || subject ? "Lease expiration on file" : title,
       detail:
         detail ||
         (lease
@@ -78,13 +96,15 @@ export function normalizeTimelineEvent(event: RawEvent): TimelineEvent | null {
           : "Lease date reported on a storefront filing."),
       source,
       provenance,
-      subjectDate: lease && lease !== filed ? lease : null,
+      subjectDate: subject,
     };
   }
 
   if (type === "registry_sale_date") {
-    const sold = dateOnly(payload.sold_date) ?? rawWhen;
-    const filed = filingAsOf(payload.reporting_year) ?? rawWhen;
+    const sold = dateOnly(payload.sold_date) ?? notAfterToday(rawWhen, today);
+    const filed =
+      notAfterToday(filingAsOf(payload.reporting_year), today) ??
+      notAfterToday(rawWhen, today);
     if (!filed) return null;
     return {
       occurredAt: filed,
@@ -99,16 +119,17 @@ export function normalizeTimelineEvent(event: RawEvent): TimelineEvent | null {
   if (type === "license" || /dcwp license/i.test(title)) {
     const expiration =
       dateOnly(payload.expiration_date) ??
-      dateOnly(detail.match(/Expiration on file (\d{4}-\d{2}-\d{2})/)?.[1]) ??
-      rawWhen;
+      dateOnly(detail.match(/Expiration on file (\d{4}-\d{2}-\d{2})/i)?.[1]) ??
+      // Legacy loads used expiration as occurred_at with a thin payload.
+      (rawWhen && rawWhen > today ? rawWhen : null);
     const created =
       dateOnly(payload.created_date) ??
-      dateOnly(detail.match(/Issued (\d{4}-\d{2}-\d{2})/)?.[1]) ??
+      dateOnly(detail.match(/Issued (\d{4}-\d{2}-\d{2})/i)?.[1]) ??
       null;
+    const rawIsExpiration = Boolean(expiration && rawWhen === expiration);
     const occurredAt =
-      created ??
-      (rawWhen && Number(rawWhen.slice(0, 4)) <= new Date().getFullYear() + 1 ? rawWhen : null) ??
-      expiration;
+      notAfterToday(created, today) ??
+      (!rawIsExpiration ? notAfterToday(rawWhen, today) : null);
     if (!occurredAt) return null;
     return {
       occurredAt,
@@ -121,8 +142,13 @@ export function normalizeTimelineEvent(event: RawEvent): TimelineEvent | null {
   }
 
   if (!rawWhen) return null;
+  const occurredAt = notAfterToday(rawWhen, today);
+  if (!occurredAt) {
+    // Unknown future-dated event: keep as subject note only if we have no better anchor.
+    return null;
+  }
   return {
-    occurredAt: rawWhen,
+    occurredAt,
     title,
     detail,
     source,
@@ -131,11 +157,11 @@ export function normalizeTimelineEvent(event: RawEvent): TimelineEvent | null {
   };
 }
 
-export function normalizeTimeline(events: RawEvent[]): TimelineEvent[] {
+export function normalizeTimeline(events: RawEvent[], today = timelineToday()): TimelineEvent[] {
   const out: TimelineEvent[] = [];
   const seen = new Set<string>();
   for (const event of events) {
-    const normalized = normalizeTimelineEvent(event);
+    const normalized = normalizeTimelineEvent(event, today);
     if (!normalized) continue;
     const key = `${normalized.occurredAt}|${normalized.title}|${normalized.subjectDate ?? ""}|${normalized.detail.slice(0, 48)}`;
     if (seen.has(key)) continue;
@@ -149,6 +175,7 @@ export function normalizeTimeline(events: RawEvent[]): TimelineEvent[] {
 export function mergePermitEvents(
   timeline: TimelineEvent[],
   permits: { filing_date?: unknown; description?: unknown; job_type?: unknown; source?: unknown }[],
+  today = timelineToday(),
 ): TimelineEvent[] {
   const hasDobOn = new Set(
     timeline
@@ -157,7 +184,7 @@ export function mergePermitEvents(
   );
   const extra: TimelineEvent[] = [];
   for (const permit of permits) {
-    const when = dateOnly(permit.filing_date);
+    const when = notAfterToday(dateOnly(permit.filing_date), today);
     if (!when || hasDobOn.has(when)) continue;
     extra.push({
       occurredAt: when,
