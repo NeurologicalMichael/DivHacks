@@ -31,6 +31,8 @@ export async function POST(request: Request) {
       summarize?: boolean;
       sessionId?: string;
       fromProfile?: boolean;
+      /** When true, body.filters is authoritative — do not re-parse the query text. */
+      preferFilters?: boolean;
     };
     const sessionId = typeof body.sessionId === "string" && /^[A-Za-z0-9_-]{1,80}$/.test(body.sessionId.trim())
       ? body.sessionId.trim()
@@ -41,13 +43,20 @@ export async function POST(request: Request) {
     if (saved) {
       filters = profileToFilters(saved.profile);
       source = "filters";
+      if (body.filters) filters = cleanFilters(body.filters, filters);
+    } else if (body.preferFilters && body.filters) {
+      // Edit-filter panel: trust the chip state, ignore leftover "restaurant-ready" query text.
+      filters = cleanFilters(body.filters, emptyFilters());
+      source = "filters";
     } else if (body.query?.trim()) {
       const interpreted = await interpretSearch(body.query.trim());
       filters = interpreted.filters;
       source = interpreted.source;
+      if (body.filters) filters = cleanFilters(body.filters, filters);
+    } else if (body.filters) {
+      filters = cleanFilters(body.filters, emptyFilters());
+      source = "filters";
     }
-    // Always merge explicit filter overrides so Edit filter works with or without a profile.
-    if (body.filters) filters = cleanFilters(body.filters, filters);
     let results = await searchStorefronts(filters);
     let rankSource: "gemini" | "profile" | null = null;
     let matchReasons: Record<string, string> = {};

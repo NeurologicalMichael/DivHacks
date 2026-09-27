@@ -13,21 +13,18 @@ type FilterChip = {
 /** Always render Location + Use as separate boxes; extras as their own boxes. */
 function buildChips(filters: SearchFilters | null): FilterChip[] {
   const chips: FilterChip[] = [];
-  const location =
-    filters?.neighborhoods.length
-      ? filters.neighborhoods.join(", ")
-      : filters?.boroughs.length
-        ? filters.boroughs.join(", ")
-        : "Location";
+  const places: string[] = [];
+  if (filters?.boroughs.length) places.push(...filters.boroughs);
+  if (filters?.neighborhoods.length) places.push(...filters.neighborhoods);
   chips.push({
     id: "location",
-    label: location,
-    active: Boolean(filters?.neighborhoods.length || filters?.boroughs.length),
+    label: places.length ? places.join(", ") : "Location",
+    active: places.length > 0,
   });
 
   const category = filters?.category
     ? `${CATEGORIES.find((c) => c.id === filters.category)?.label ?? filters.category} ready`
-    : "Restaurant ready";
+    : "Any use";
   chips.push({
     id: "category",
     label: category,
@@ -116,6 +113,9 @@ export function FilterBar({
 
             <section>
               <p className="section-label">Borough</p>
+              <p className="disclaimer" style={{ marginTop: 0 }}>
+                Boroughs and neighborhoods can both be on — results match either.
+              </p>
               <div className="option-grid">
                 {BOROUGHS.map((borough) => (
                   <button

@@ -9,9 +9,17 @@ export function titleAddress(value: string) {
 
 export function formatDate(value?: string | null) {
   if (!value) return "Date not on file";
-  const date = new Date(`${value.slice(0, 10)}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value.slice(0, 10);
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const raw = String(value).trim();
+  // Year-only values (area trends) stay as the year.
+  if (/^\d{4}$/.test(raw)) return raw;
+  const iso = raw.slice(0, 10);
+  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return raw.slice(0, 10);
+  const [, year, month, day] = match;
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const monthName = months[Number(month) - 1];
+  if (!monthName) return iso;
+  return `${monthName} ${Number(day)}, ${year}`;
 }
 
 export function formatMoney(value?: number | null) {

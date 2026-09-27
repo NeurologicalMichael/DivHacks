@@ -6,19 +6,22 @@ LeaseLens is a map-first search for entrepreneurs looking at New York City store
 
 ## Run
 
-PostgreSQL 16 with PostGIS and TimescaleDB (Tiger Data's database engine) needs to be listening on `localhost:5432`.
+PostgreSQL 16 with PostGIS and TimescaleDB (Tiger Data's database engine) needs to be reachable. The Docker container `leaselens-db` publishes it on **`localhost:5433`** (host `5432` is often already taken by another Postgres).
 
 ```bash
 npm install
+# ensure the container is up, e.g. docker start leaselens-db
 npm run db:setup
 npm run dev
 ```
 
-The database URL defaults to `postgres://leaselens:leaselens@localhost:5432/leaselens`. Override it with `DATABASE_URL`.
+The database URL defaults to `postgres://leaselens:leaselens@localhost:5433/leaselens`. Override it with `DATABASE_URL`.
 
 Optional: set `GEMINI_API_KEY` to let Gemini turn a sentence into filters and summarize records that were already retrieved. Without a key, a local parser handles the same searches and the on-screen explanations are templates built only from those records.
 
 Optional: set `MAPILLARY_TOKEN` to a free client token from the [Mapillary developer dashboard](https://www.mapillary.com/dashboard/developers). No credit card. When a sidewalk photo exists within 50 meters of the storefront, it appears in the list thumbnail and on the detail panel, with CC BY-SA credit on the detail. Without a token, or when Mapillary has no nearby photo, the thumbnail stays empty and the panel says so. These are street-level photos, not interiors.
+
+Optional: set `NEXT_PUBLIC_CARTO_API_KEY` to your [CARTO](https://carto.com/) basemap API key for the light map tiles. Without it, the map falls back to Esri’s light-gray basemap (no key). Restart `npm run dev` after changing any `NEXT_PUBLIC_*` variable.
 
 Try: “Show me restaurant-ready storefronts in Brooklyn that may become available in the next 6 months.”
 

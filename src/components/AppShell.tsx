@@ -28,13 +28,6 @@ const EXAMPLE = "Show me restaurant-ready storefronts in Brooklyn that may becom
 
 type Mode = "explore" | "gap" | "owner" | "landlord";
 type SortKey = "turnover" | "fit" | "name";
-type Health = {
-  ok?: boolean;
-  properties?: number;
-  timescaledb?: string;
-  gemini?: boolean;
-  mode?: string;
-};
 
 function sessionId() {
   const key = "leaselens-session";
@@ -63,7 +56,6 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<StorefrontDetail | null>(null);
   const [explanation, setExplanation] = useState<{ text: string; source: string } | null>(null);
-  const [health, setHealth] = useState<Health | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [explaining, setExplaining] = useState(false);
@@ -83,7 +75,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
 
   const search = useCallback(async (
     nextQuery: string,
-    options?: { filters?: Partial<SearchFilters>; fromProfile?: boolean; keepSelection?: boolean },
+    options?: { filters?: Partial<SearchFilters>; fromProfile?: boolean; keepSelection?: boolean; preferFilters?: boolean },
   ) => {
     setLoading(true);
     setError("");
@@ -100,6 +92,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
           query: nextQuery,
           summarize: false,
           filters: options?.filters,
+          preferFilters: Boolean(options?.preferFilters),
           sessionId: sessionId(),
           fromProfile: Boolean(options?.fromProfile),
         }),
@@ -152,10 +145,6 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
   }, []);
 
   useEffect(() => {
-    fetch("/api/health")
-      .then((r) => r.json())
-      .then((payload) => setHealth({ ...payload, ok: payload.ok !== false && !payload.error }))
-      .catch(() => setHealth(null));
     fetch("/api/gap").then((r) => r.json()).then((payload) => {
       setGapNeighborhoods(payload.neighborhoods ?? []);
     }).catch(() => undefined);
@@ -231,11 +220,12 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
 
   function applyFilters(next: SearchFilters) {
     setFilters(next);
-    const place = next.neighborhoods[0] || next.boroughs[0] || "NYC";
+    const places = [...next.boroughs, ...next.neighborhoods];
+    const place = places.length ? places.join(" / ") : "NYC";
     const use = next.category ? categoryLabel(next.category).toLowerCase() : "storefront";
     const sentence = `${use} storefronts in ${place}${next.months ? ` in the next ${next.months} months` : ""}${next.nearSubway ? " near a subway" : ""}`;
     setQuery(sentence);
-    search(sentence, { filters: next, fromProfile: false }).catch((caught) => setError(caught.message));
+    search(sentence, { filters: next, fromProfile: false, preferFilters: true }).catch((caught) => setError(caught.message));
   }
 
   const sorted = useMemo(() => {
@@ -297,15 +287,8 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
             onChange={(event) => setQuery(event.target.value)}
           />
         </form>
-        <div className="topbar-right">
+        <div className="topbar-right" aria-hidden={!loading}>
           {loading && <span className="muted">Searching…</span>}
-          {health && (
-            <span className="muted status-pill">
-              {health.properties ?? 0} storefronts
-              {health.mode === "snapshot" ? " · snapshot" : ""}
-              {health.gemini ? " · Gemini" : ""}
-            </span>
-          )}
         </div>
       </header>
 
@@ -459,24 +442,6 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
                   } finally {
                     setExplaining(false);
                   }
-                }}
-                onGap={() => {
-                  setMode("gap");
-                  loadGap(detail.neighborhood, detail.id).catch((caught) => setError(caught.message));
-                }}
-                onWatch={async () => {
-                  await fetch("/api/owner", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ sessionId: sessionId(), propertyId: detail.id }),
-                  });
-                  await loadWatches();
-                  setMode("owner");
-                  setPersona("shop_owner");
-                }}
-                onLandlord={() => {
-                  setMode("landlord");
-                  setPersona("landlord");
                 }}
               />
             )}

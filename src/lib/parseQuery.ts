@@ -60,8 +60,13 @@ export function parseQuery(input: string): SearchFilters {
 
 export function describeFilters(filters: SearchFilters, count: number) {
   const parts = [`${count} storefront${count === 1 ? "" : "s"}`];
-  if (filters.neighborhoods.length) parts.push(`in ${filters.neighborhoods.join(", ")}`);
-  else if (filters.boroughs.length) parts.push(`in ${filters.boroughs.join(", ")}`);
+  if (filters.neighborhoods.length && filters.boroughs.length) {
+    parts.push(`in ${filters.boroughs.join(", ")} or ${filters.neighborhoods.join(", ")}`);
+  } else if (filters.neighborhoods.length) {
+    parts.push(`in ${filters.neighborhoods.join(", ")}`);
+  } else if (filters.boroughs.length) {
+    parts.push(`in ${filters.boroughs.join(", ")}`);
+  }
   if (filters.category) parts.push(`scored for ${filters.category.replaceAll("_", " ")} fit`);
   if (filters.months) {
     parts.push(

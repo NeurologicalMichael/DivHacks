@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { categoryLabel } from "@/lib/catalog";
 import { formatDate, formatMeters, formatMoney, titleAddress } from "@/lib/format";
-import { METRIC_DEFS, buildMetricStates, enabledTotal, type MetricState } from "@/lib/signals";
+import { METRIC_DEFS, buildMetricStates, enabledTotal } from "@/lib/signals";
 import type { StorefrontDetail } from "@/lib/types";
-import { MetricsDonut, ScorePair, ScoringMethod } from "./MetricsDonut";
+import { MetricsDonut, ScorePair } from "./MetricsDonut";
 
 const FLAG_SHORT: Record<string, string> = {
   reported_vacant: "Reported vacant",
@@ -79,37 +79,35 @@ export function DetailPanel({
   explanation,
   busy,
   onExplain,
-  onGap,
-  onWatch,
-  onLandlord,
   showAiSummary = true,
 }: {
   detail: StorefrontDetail;
   explanation: { text: string; source: string } | null;
   busy: boolean;
   onExplain: () => void;
-  onGap: () => void;
-  onWatch: () => void;
-  onLandlord: () => void;
   showAiSummary?: boolean;
 }) {
-  const [metrics, setMetrics] = useState<MetricState[]>(() => buildMetricStates(detail.signals));
+  const metrics = useMemo(() => buildMetricStates(detail.signals), [detail.signals]);
   const [showAllFlags, setShowAllFlags] = useState(false);
   const [showFullHistory, setShowFullHistory] = useState(false);
-  const [scoringOpen, setScoringOpen] = useState(false);
+  const [mixOpen, setMixOpen] = useState(true);
   const [areaOpen, setAreaOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   useEffect(() => {
-    setMetrics(buildMetricStates(detail.signals));
     setShowAllFlags(false);
     setShowFullHistory(false);
-    setScoringOpen(false);
+    setMixOpen(true);
     setAreaOpen(false);
     setDetailsOpen(false);
-    // Reset when the selected storefront changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail.id]);
+
+  // Load the summary as soon as a storefront is selected.
+  useEffect(() => {
+    if (!showAiSummary || explanation || busy) return;
+    onExplain();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail.id, showAiSummary]);
 
   const turnover = enabledTotal(metrics);
   const flagged = useMemo(() => {
@@ -147,12 +145,13 @@ export function DetailPanel({
     : buildingEvents.slice(0, PREVIEW_EVENTS);
 
   const fitName = categoryLabel(detail.fitCategory);
+  const title = titleAddress(detail.address);
 
   return (
     <div className="detail">
       <header className="detail-head">
-        <h2>{detail.activity ? titleAddress(detail.activity) : titleAddress(detail.address)}</h2>
-        <p className="address-line">{titleAddress(detail.address)}</p>
+        <h2>{title}</h2>
+        <p className="index-note">Indexes are derived from public filings below…</p>
         <p className="sub">
           {detail.neighborhood} · {detail.borough}
         </p>
@@ -161,29 +160,22 @@ export function DetailPanel({
 
       <ScorePair turnover={turnover} fit={detail.fitScore} fitCategory={fitName} />
 
-      <p className="disclaimer">
-        Indexes are derived from public filings below. They are not probabilities and not a listing.
-      </p>
-
       {showAiSummary && (
         <section className="ai-block">
           <div className="ai-head">
             <span className="ai-star" aria-hidden="true">
               ✦
             </span>
-            <strong>AI summary</strong>
+            <strong>Summary</strong>
           </div>
           {explanation ? (
-            <p>{explanation.text}</p>
+            <p className="summary-text">{explanation.text}</p>
           ) : (
-            <button type="button" className="ghost" onClick={onExplain} disabled={busy}>
-              {busy ? "Reading the records…" : "Summarize the evidence"}
-            </button>
+            <p className="muted">{busy ? "Reading the records…" : "Preparing a summary…"}</p>
           )}
         </section>
       )}
 
-      {/* Flagged items — top of evidence list, simplified */}
       <section className="panel-card">
         <header className="section-head">
           <h3>Why it was flagged</h3>
@@ -194,7 +186,7 @@ export function DetailPanel({
           {visibleFlags.map((flag) => (
             <li key={flag.id}>
               <span>{FLAG_SHORT[flag.id] ?? METRIC_DEFS.find((d) => d.id === flag.id)?.label ?? flag.id}</span>
-              <span className="flag-weight">+{flag.weight}</span>
+              <span className="flag-weight is-positive">+{flag.weight}</span>
             </li>
           ))}
         </ul>
@@ -205,7 +197,6 @@ export function DetailPanel({
         )}
       </section>
 
-      {/* Building + area history */}
       <section className="panel-card">
         <header className="section-head">
           <h3>Timeline</h3>
@@ -268,28 +259,29 @@ export function DetailPanel({
         )}
       </section>
 
-      {/* Progressive disclosure: scoring + more about area */}
-      {!scoringOpen ? (
-        <button type="button" className="more-btn block" onClick={() => setScoringOpen(true)}>
-          How the score was built · adjust weights ▾
+      {!mixOpen ? (
+        <button type="button" className="more-btn block" onClick={() => setMixOpen(true)}>
+          How the score breaks down ▾
         </button>
       ) : (
-        <>
-          <ScoringMethod metrics={metrics} onChange={setMetrics} onClose={() => setScoringOpen(false)} />
-          <div className="panel-card">
-            <header className="section-head">
-              <h3>Live weight mix</h3>
-              <span>Total points</span>
-            </header>
-            <MetricsDonut metrics={metrics} onChange={setMetrics} />
-          </div>
-        </>
+        <div className="panel-card">
+          <header className="section-head">
+            <h3>Score breakdown</h3>
+            <button type="button" className="text-btn" onClick={() => setMixOpen(false)}>
+              Hide ▴
+            </button>
+          </header>
+          <p className="scoring-lead">
+            These public-record signals add up to <strong>{turnover}</strong> turnover points.
+          </p>
+          <MetricsDonut metrics={metrics} />
+        </div>
       )}
 
       <section className="panel-card">
         <header className="section-head">
           <h3>More about this area</h3>
-          <span>4 sections</span>
+          <span>Transit &amp; businesses</span>
         </header>
         <button type="button" className="dropdown-btn" onClick={() => setDetailsOpen((v) => !v)}>
           Transit, businesses, trends {detailsOpen ? "▴" : "▾"}
@@ -319,22 +311,11 @@ export function DetailPanel({
                 {detail.fitBreakdown.map((item) => (
                   <div className="row-line" key={item.label}>
                     <span>{item.label}</span>
-                    <span>+{item.points}</span>
+                    <span className="flag-weight is-positive">+{item.points}</span>
                   </div>
                 ))}
               </>
             )}
-            <div className="actions">
-              <button type="button" className="primary" onClick={onGap}>
-                What should open here?
-              </button>
-              <button type="button" className="ghost" onClick={onWatch}>
-                Watch privately
-              </button>
-            </div>
-            <button type="button" className="ghost" style={{ width: "100%", marginTop: 8 }} onClick={onLandlord}>
-              This is my space
-            </button>
           </div>
         )}
       </section>

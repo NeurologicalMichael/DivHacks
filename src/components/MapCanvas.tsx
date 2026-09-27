@@ -3,6 +3,7 @@
 import L from "leaflet";
 import { useEffect, useRef } from "react";
 import "leaflet/dist/leaflet.css";
+import { turnoverScaleColor } from "@/lib/turnoverColor";
 
 export type Pin = {
   id: string;
@@ -16,29 +17,11 @@ export type Pin = {
 const MAX_PINS = 28;
 const NYC: L.LatLngExpression = [40.7128, -73.97];
 
-/** Same orange → yellow → green scale as the Turnover gauge. */
-export function turnoverScaleColor(score: number): string {
-  const t = Math.max(0, Math.min(100, score)) / 100;
-  const stops: [number, [number, number, number]][] = [
-    [0, [249, 115, 22]], // #F97316
-    [0.5, [234, 179, 8]], // #EAB308
-    [1, [34, 197, 94]], // #22C55E
-  ];
-  let i = 0;
-  while (i < stops.length - 2 && t > stops[i + 1][0]) i += 1;
-  const [t0, c0] = stops[i];
-  const [t1, c1] = stops[i + 1];
-  const u = t1 === t0 ? 0 : (t - t0) / (t1 - t0);
-  const r = Math.round(c0[0] + (c1[0] - c0[0]) * u);
-  const g = Math.round(c0[1] + (c1[1] - c0[1]) * u);
-  const b = Math.round(c0[2] + (c1[2] - c0[2]) * u);
-  return `rgb(${r}, ${g}, ${b})`;
-}
+export { turnoverScaleColor };
 
 function sizeFor(pin: Pin) {
-  // Keep sizes tight so the map stays scannable.
-  const base = 9 + Math.round((Math.min(100, Math.max(0, pin.turnover)) / 100) * 7);
-  return pin.active ? base + 3 : base;
+  const base = 8 + Math.round((Math.min(100, Math.max(0, pin.turnover)) / 100) * 10);
+  return pin.active ? base + 4 : base;
 }
 
 export default function MapCanvas({
@@ -71,12 +54,43 @@ export default function MapCanvas({
       keyboard: true,
     }).setView(NYC, 12);
 
-    // OpenStreetMap with soft CSS tint — light color (water/parks) without a paid basemap key.
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap contributors",
-      maxZoom: 18,
-      className: "ll-tiles",
-    }).addTo(map);
+    const cartoKey = process.env.NEXT_PUBLIC_CARTO_API_KEY?.trim();
+
+    // CARTO requires `?key=` (not apikey). Fall back to Esri if tiles error.
+    const esri = L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+      {
+        attribution: "Tiles &copy; Esri",
+        maxZoom: 16,
+        className: "ll-tiles",
+      },
+    );
+
+    const carto = cartoKey
+      ? L.tileLayer(
+          `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(cartoKey)}`,
+          {
+            attribution:
+              '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: "abcd",
+            maxZoom: 19,
+            className: "ll-tiles",
+            errorTileUrl: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
+          },
+        )
+      : null;
+
+    const basemap = carto ?? esri;
+    basemap.addTo(map);
+    if (carto) {
+      let fellBack = false;
+      carto.on("tileerror", () => {
+        if (fellBack) return;
+        fellBack = true;
+        map.removeLayer(carto);
+        esri.addTo(map);
+      });
+    }
 
     L.control.zoom({ position: "bottomright" }).addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
@@ -86,6 +100,7 @@ export default function MapCanvas({
     refresh();
     const frame = requestAnimationFrame(refresh);
     const timer = window.setTimeout(refresh, 120);
+    const timer2 = window.setTimeout(refresh, 400);
     const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(refresh) : null;
     observer?.observe(el);
     window.addEventListener("resize", refresh);
@@ -93,6 +108,7 @@ export default function MapCanvas({
     return () => {
       cancelAnimationFrame(frame);
       window.clearTimeout(timer);
+      window.clearTimeout(timer2);
       observer?.disconnect();
       window.removeEventListener("resize", refresh);
       map.remove();
@@ -124,10 +140,8 @@ export default function MapCanvas({
       const color = turnoverScaleColor(pin.turnover);
       const icon = L.divIcon({
         className: "ll-marker",
-        html: pin.active
-          ? `<button type="button" class="pin-dot is-active" style="width:${size}px;height:${size}px;background:${color}" aria-label="${escapeHtml(pin.label ?? "Selected storefront")}"></button><span class="pin-label">${escapeHtml(pin.label ?? "Storefront")}</span>`
-          : `<button type="button" class="pin-dot" style="width:${size}px;height:${size}px;background:${color}" aria-label="Turnover ${pin.turnover}"></button>`,
-        iconSize: pin.active ? [Math.max(size + 8, 120), Math.max(size + 8, 28)] : [size + 4, size + 4],
+        html: `<button type="button" class="pin-dot${pin.active ? " is-active" : ""}" style="width:${size}px;height:${size}px;background:${color}" aria-label="${escapeHtml(pin.active ? pin.label ?? "Selected storefront" : `Turnover ${pin.turnover}`)}"></button>`,
+        iconSize: [size + 4, size + 4],
         iconAnchor: [size / 2, size / 2],
       });
 

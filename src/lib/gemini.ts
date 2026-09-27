@@ -153,7 +153,7 @@ export async function summarizeRecords(instruction: string, records: unknown) {
   const source = JSON.stringify(records);
   const text = await generate(
     `${instruction}
-Use only the JSON below. Do not invent addresses, dates, prices, landlords, or lease expirations. If a field is missing, say it is not on file. Keep it under 90 words.
+Use only the JSON below. Do not invent addresses, dates, prices, landlords, or lease expirations. If a field is missing, say it is not on file. Keep it under 55 words. Write for a busy non-expert: short sentences, everyday words, no jargon.
 ${source}`,
     false,
   );

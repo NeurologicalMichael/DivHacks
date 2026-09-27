@@ -97,10 +97,18 @@ async function searchStorefrontsDb(filters: SearchFilters) {
 
   if (filters.boroughs.length) {
     params.push(filters.boroughs);
-    where.push(`p.borough = ANY($${params.length})`);
   }
   if (filters.neighborhoods.length) {
     params.push(filters.neighborhoods);
+  }
+  if (filters.boroughs.length && filters.neighborhoods.length) {
+    const boroughParam = params.length - 1; // neighborhoods is last, boroughs is second-to-last
+    const neighborhoodParam = params.length;
+    // Match either selected boroughs or selected neighborhoods (not required to satisfy both).
+    where.push(`(p.borough = ANY($${boroughParam}) OR p.neighborhood = ANY($${neighborhoodParam}))`);
+  } else if (filters.boroughs.length) {
+    where.push(`p.borough = ANY($${params.length})`);
+  } else if (filters.neighborhoods.length) {
     where.push(`p.neighborhood = ANY($${params.length})`);
   }
   if (filters.minTurnover > 0) {

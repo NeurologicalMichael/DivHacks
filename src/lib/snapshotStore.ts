@@ -6,7 +6,7 @@ import type { BreakdownItem, Gap, SearchFilters, Signal, StorefrontDetail, Summa
 
 type Prop = Record<string, unknown>;
 type Snapshot = {
-  meta?: { counts?: Record<string, number> };
+  meta?: { counts?: Record<string, number>; app_as_of?: string };
   properties: Prop[];
   events: Prop[];
   businesses: Prop[];
@@ -367,11 +367,16 @@ export function snapshotSearch(filters: SearchFilters): Summary[] {
   const fitFloor = filters.category ? 40 : 0;
   let rows = snap.properties.map((p) => toSummary(p, category, snap));
 
-  if (filters.boroughs.length) {
+  if (filters.boroughs.length && filters.neighborhoods.length) {
+    const boroughs = new Set(filters.boroughs.map((b) => b.toLowerCase()));
+    const neighborhoods = new Set(filters.neighborhoods.map((n) => n.toLowerCase()));
+    rows = rows.filter(
+      (r) => boroughs.has(r.borough.toLowerCase()) || neighborhoods.has(r.neighborhood.toLowerCase()),
+    );
+  } else if (filters.boroughs.length) {
     const set = new Set(filters.boroughs.map((b) => b.toLowerCase()));
     rows = rows.filter((r) => set.has(r.borough.toLowerCase()));
-  }
-  if (filters.neighborhoods.length) {
+  } else if (filters.neighborhoods.length) {
     const set = new Set(filters.neighborhoods.map((n) => n.toLowerCase()));
     rows = rows.filter((r) => set.has(r.neighborhood.toLowerCase()));
   }
