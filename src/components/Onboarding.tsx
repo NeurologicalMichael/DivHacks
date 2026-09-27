@@ -37,8 +37,8 @@ function toggle<T extends string>(list: T[], value: T): T[] {
 export function Onboarding({
   initial,
   onSave,
-  onSkip,
-  onClose,
+  onSkip: _onSkip,
+  onClose: _onClose,
 }: {
   initial: RenterProfile | null;
   onSave: (profile: RenterProfile) => void;
@@ -54,6 +54,10 @@ export function Onboarding({
     setError("");
   }
 
+  function finish() {
+    onSave({ ...draft, savedAt: new Date().toISOString() });
+  }
+
   function next() {
     const problem = stepError(draft, step);
     if (problem) {
@@ -64,11 +68,21 @@ export function Onboarding({
       setStep(step + 1);
       return;
     }
-    onSave({ ...draft, savedAt: new Date().toISOString() });
+    finish();
+  }
+
+  function skip() {
+    setError("");
+    if (step < STEPS.length - 1) {
+      setStep(step + 1);
+      return;
+    }
+    finish();
   }
 
   const neighborhoods = neighborhoodsFor(draft.boroughs);
-  const commercial = wantsCommercial(draft);
+  const skippedLease = draft.leaseKind == null;
+  const commercial = wantsCommercial(draft) || skippedLease;
   const home = wantsHome(draft);
   const current = STEPS[step];
 
@@ -97,13 +111,16 @@ export function Onboarding({
                 ))}
               </div>
               <p className="onboard-hint">
-                {LEASE_KINDS.find((k) => k.id === draft.leaseKind)?.hint ?? "Pick one to continue."}
+                {LEASE_KINDS.find((k) => k.id === draft.leaseKind)?.hint ?? "Pick one, or skip this question."}
               </p>
             </section>
           )}
 
           {step === 1 && (
             <div className="onboard-sections">
+              {skippedLease && (
+                <p className="onboard-hint">Lease type was skipped, so these questions are for a business space.</p>
+              )}
               {commercial && (
                 <section>
                   <p className="onboard-label">Category</p>
@@ -175,6 +192,9 @@ export function Onboarding({
 
           {step === 2 && (
             <div className="onboard-sections">
+              {skippedLease && (
+                <p className="onboard-hint">Lease type was skipped, so rent and size are for a business space.</p>
+              )}
               {commercial && (
                 <section>
                   <p className="onboard-label">Maximum business rent</p>
@@ -333,32 +353,26 @@ export function Onboarding({
 
         {error && <p className="onboard-error">{error}</p>}
         <footer className="onboard-foot">
-          {step > 0 ? (
-            <button
-              type="button"
-              className="onboard-secondary"
-              onClick={() => {
-                setStep(step - 1);
-                setError("");
-              }}
-            >
-              Back
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="onboard-secondary"
-              onClick={() => {
-                if (onSkip) onSkip();
-                else onClose?.();
-              }}
-            >
-              Skip for now
-            </button>
-          )}
-          <button type="button" className="onboard-primary" onClick={next}>
-            Continue
+          <button type="button" className="onboard-skip" onClick={skip}>
+            Skip
           </button>
+          <div className="onboard-foot-actions">
+            {step > 0 && (
+              <button
+                type="button"
+                className="onboard-secondary"
+                onClick={() => {
+                  setStep(step - 1);
+                  setError("");
+                }}
+              >
+                Back
+              </button>
+            )}
+            <button type="button" className="onboard-primary" onClick={next}>
+              Continue
+            </button>
+          </div>
         </footer>
       </article>
     </div>

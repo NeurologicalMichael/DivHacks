@@ -496,7 +496,7 @@ async function ensureProfileTable() {
   await query(`
     CREATE TABLE IF NOT EXISTS renter_profiles (
       session_id TEXT PRIMARY KEY,
-      lease_kind TEXT NOT NULL,
+      lease_kind TEXT,
       commercial_use TEXT,
       beds TEXT,
       budget TEXT,
@@ -513,6 +513,7 @@ async function ensureProfileTable() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
+  await query(`ALTER TABLE renter_profiles ALTER COLUMN lease_kind DROP NOT NULL`);
   profileTableReady = true;
 }
 

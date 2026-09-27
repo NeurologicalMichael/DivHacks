@@ -742,10 +742,25 @@ button:disabled { cursor: wait; opacity: 0.7; }
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   padding-top: 18px;
   border-top: 1px solid #ececec;
   margin-top: 8px;
+}
+.onboard-foot-actions {
+  display: flex;
+  gap: 10px;
+  margin-left: auto;
+}
+.onboard-skip {
+  border: 1.5px solid #e5e5e5;
+  background: #fff;
+  color: #111;
+  border-radius: 14px;
+  padding: 14px 22px;
+  min-width: 108px;
+  font-size: 15px;
+  font-weight: 600;
 }
 .onboard-secondary,
 .onboard-primary {

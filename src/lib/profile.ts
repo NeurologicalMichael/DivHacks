@@ -195,7 +195,7 @@ export function loadProfile(): RenterProfile | null {
     const raw = window.localStorage.getItem(PROFILE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as RenterProfile;
-    if (parsed?.version !== 1 || !parsed.leaseKind) return null;
+    if (parsed?.version !== 1) return null;
     return parsed;
   } catch {
     return null;
@@ -236,9 +236,7 @@ export function normalizeProfile(input: unknown): RenterProfile | null {
   if (!input || typeof input !== "object") return null;
   const raw = input as Record<string, unknown>;
   const leaseKind = oneOf(raw.leaseKind, ["commercial", "residential", "both"] as const);
-  if (!leaseKind) return null;
   const boroughs = stringList(raw.boroughs).filter((borough) => BOROUGHS.includes(borough));
-  if (!boroughs.length) return null;
   const allowedNeighborhoods = new Set<string>(neighborhoodsFor(boroughs));
   const draft: RenterProfile = {
     version: 1,
@@ -258,24 +256,18 @@ export function normalizeProfile(input: unknown): RenterProfile | null {
     mustHaves: stringList(raw.mustHaves).filter((id) => MUST_IDS.has(id)),
     savedAt: new Date().toISOString(),
   };
-  if (!wantsCommercial(draft)) {
+  if (draft.leaseKind === "residential") {
     draft.use = null;
     draft.size = null;
     draft.concept = "";
   }
-  if (!wantsHome(draft)) {
+  if (draft.leaseKind === "commercial") {
     draft.beds = null;
     draft.household = null;
     draft.pets = null;
     draft.homeBudget = null;
   }
-  if (leaseKind !== "both") draft.homeBudget = null;
-  if (wantsCommercial(draft) && !draft.use) return null;
-  if (wantsHome(draft) && !draft.beds) return null;
-  if (!draft.timing) return null;
-  if (wantsCommercial(draft) && !draft.budget) return null;
-  if (leaseKind === "residential" && !draft.budget) return null;
-  if (leaseKind === "both" && !draft.homeBudget) return null;
+  if (draft.leaseKind !== "both") draft.homeBudget = null;
   return draft;
 }
 
@@ -379,14 +371,16 @@ export function profileSentence(profile: RenterProfile): string {
   const filters = profileToFilters(profile);
   const place = filters.neighborhoods.length
     ? filters.neighborhoods.join(", ")
-    : filters.boroughs.join(", ");
-  const use = filters.category ? categoryLabel(filters.category).toLowerCase() : "storefront";
+    : filters.boroughs.length
+      ? filters.boroughs.join(", ")
+      : "NYC";
   const when = filters.months ? ` that may become available in the next ${filters.months} months` : "";
   const transit = filters.nearSubway ? " near a subway" : "";
   if (profile.leaseKind === "residential") {
     return `Storefront filings in ${place}${when}${transit}`;
   }
-  return `${use} storefronts in ${place}${when}${transit}`;
+  const use = filters.category ? `${categoryLabel(filters.category).toLowerCase()} storefronts` : "Storefronts";
+  return `${use} in ${place}${when}${transit}`;
 }
 
 export function profileHeadline(profile: RenterProfile): string {
