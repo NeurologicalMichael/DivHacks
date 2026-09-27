@@ -1,3 +1,5 @@
+import { toIsoDate } from "./format";
+
 /** Normalize timeline events so dates reflect when they were reported, not subject dates. */
 
 export type TimelineEvent = {
@@ -26,9 +28,7 @@ function str(value: unknown) {
 }
 
 function dateOnly(value: unknown) {
-  const raw = str(value).trim();
-  if (!raw) return null;
-  return raw.slice(0, 10);
+  return toIsoDate(value);
 }
 
 function filingAsOf(reportingYear: unknown) {

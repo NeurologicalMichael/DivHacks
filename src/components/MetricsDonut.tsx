@@ -125,15 +125,22 @@ export function MetricsDonut({ metrics }: { metrics: MetricState[] }) {
       </svg>
       <p className="donut-caption">{turnoverLabel(total)}</p>
       <ul className="donut-legend is-readonly">
-        {enabled.map((metric, index) => (
-          <li key={metric.id}>
-            <span className="legend-toggle" title={rationaleFor(metric)}>
-              <i style={{ background: colorFor(metric, index) }} />
-              <span>{metricLabel(metric)}</span>
-            </span>
-            <span className="flag-weight is-positive">+{metric.weight}</span>
-          </li>
-        ))}
+        {metrics.map((metric, index) => {
+          const applies = metric.found && metric.enabled && metric.weight > 0;
+          return (
+            <li key={metric.id} className={applies ? undefined : "is-off"}>
+              <span className="legend-toggle" title={rationaleFor(metric)}>
+                <i style={{ background: applies ? colorFor(metric, index) : "#D4D4D4" }} />
+                <span>{metricLabel(metric)}</span>
+              </span>
+              {applies ? (
+                <span className="flag-weight is-positive">+{metric.weight}</span>
+              ) : (
+                <span className="metric-na">Not on file</span>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

@@ -7,18 +7,53 @@ export function titleAddress(value: string) {
     });
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * Normalize any date-ish value to YYYY-MM-DD.
+ * Avoids `String(date).slice(0, 10)` which becomes "Wed Dec 30" and drops the year.
+ */
+export function toIsoDate(value?: unknown): string | null {
+  if (value == null || value === "") return null;
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  if (/^\d{4}$/.test(raw)) return `${raw}-01-01`;
+
+  const iso = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (iso) return iso[1];
+
+  // Postgres / JS Date string: "Wed Dec 30 2023 19:00:00 GMT-0500 (...)"
+  const verbose = raw.match(/^(?:[A-Za-z]{3} )?([A-Za-z]{3}) (\d{1,2}) (\d{4})\b/);
+  if (verbose) {
+    const month = MONTHS.findIndex((m) => m.toLowerCase() === verbose[1].toLowerCase());
+    if (month >= 0) {
+      return `${verbose[3]}-${String(month + 1).padStart(2, "0")}-${String(Number(verbose[2])).padStart(2, "0")}`;
+    }
+  }
+
+  const parsed = Date.parse(raw);
+  if (!Number.isNaN(parsed)) return new Date(parsed).toISOString().slice(0, 10);
+
+  return null;
+}
+
+/** Display date with an explicit year, e.g. "Dec 31, 2023". */
 export function formatDate(value?: string | null) {
   if (!value) return "Date not on file";
   const raw = String(value).trim();
-  // Year-only values (area trends) stay as the year.
   if (/^\d{4}$/.test(raw)) return raw;
-  const iso = raw.slice(0, 10);
-  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return raw.slice(0, 10);
-  const [, year, month, day] = match;
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const monthName = months[Number(month) - 1];
-  if (!monthName) return iso;
+
+  const iso = toIsoDate(raw);
+  if (!iso) return raw;
+  const [year, month, day] = iso.split("-");
+  const monthName = MONTHS[Number(month) - 1];
+  if (!monthName || !year || !day) return iso;
   return `${monthName} ${Number(day)}, ${year}`;
 }
 

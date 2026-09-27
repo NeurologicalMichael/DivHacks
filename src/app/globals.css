@@ -760,6 +760,11 @@ button:disabled { cursor: wait; opacity: 0.7; }
   font-size: 12.5px;
 }
 .donut-legend li.is-off { opacity: 0.45; }
+.metric-na {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
 .legend-toggle {
   display: flex;
   align-items: center;

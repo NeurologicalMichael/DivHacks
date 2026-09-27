@@ -9,6 +9,7 @@ import {
   snapshotNearbyCategoryCount,
   snapshotSearch,
 } from "./snapshotStore";
+import { toIsoDate } from "./format";
 import { normalizeTimeline } from "./timeline";
 import type { BreakdownItem, Gap, SearchFilters, StorefrontDetail, Summary } from "./types";
 
@@ -30,9 +31,7 @@ async function withDb<T>(run: () => Promise<T>, fallback: () => T | Promise<T>):
 }
 
 function date(value: unknown) {
-  if (!value) return null;
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
-  return String(value).slice(0, 10);
+  return toIsoDate(value);
 }
 
 function num(value: unknown) {

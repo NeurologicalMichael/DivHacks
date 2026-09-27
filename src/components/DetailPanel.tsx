@@ -206,44 +206,44 @@ export function DetailPanel({
         <ol className="timeline-list">
           {historyPreview.map((event) => (
             <li key={event.title + event.occurredAt + (event.subjectDate ?? "")}>
-              <time>{formatDate(event.occurredAt)}</time>
-              <div>
-                <strong>{event.title}</strong>
-                {event.subjectDate && event.subjectDate !== event.occurredAt && (
-                  <span className="sub">Reported date on file: {formatDate(event.subjectDate)}</span>
-                )}
-                <span className="sub">{event.source}</span>
-              </div>
-            </li>
-          ))}
-          {buildingEvents.length === 0 && <li className="empty">No dated events on this building.</li>}
-        </ol>
-        {buildingEvents.length > PREVIEW_EVENTS && (
-          <button type="button" className="more-btn" onClick={() => setShowFullHistory((v) => !v)}>
-            {showFullHistory ? "Show less history" : "Show full history"} ▾
-          </button>
-        )}
-
-        <p className="section-sub" style={{ marginTop: 16 }}>
-          Surrounding area · {detail.neighborhood}
-        </p>
-        {!areaOpen ? (
-          <button type="button" className="more-btn" onClick={() => setAreaOpen(true)}>
-            Show area history ▾
-          </button>
-        ) : (
-          <>
-            {area && (
-              <p className="evidence">
-                Reporting year {area.reportingYear}: {area.vacant.toLocaleString()} vacant filings out of{" "}
-                {area.storefronts.toLocaleString()}
-                {area.vacancyRate != null ? ` (${Math.round(area.vacancyRate * 1000) / 10}%)` : ""}.
-              </p>
+                  <time dateTime={event.occurredAt}>{formatDate(event.occurredAt)}</time>
+                  <div>
+                    <strong>{event.title}</strong>
+                    {event.subjectDate && event.subjectDate !== event.occurredAt && (
+                      <span className="sub">Reported date on file: {formatDate(event.subjectDate)}</span>
+                    )}
+                    <span className="sub">{event.source}</span>
+                  </div>
+                </li>
+              ))}
+              {buildingEvents.length === 0 && <li className="empty">No dated events on this building.</li>}
+            </ol>
+            {buildingEvents.length > PREVIEW_EVENTS && (
+              <button type="button" className="more-btn" onClick={() => setShowFullHistory((v) => !v)}>
+                {showFullHistory ? "Show less history" : "Show full history"} ▾
+              </button>
             )}
-            <ol className="timeline-list">
-              {areaEvents.map((event) => (
-                <li key={event.when + event.title}>
-                  <time>{event.when}</time>
+
+            <p className="section-sub" style={{ marginTop: 16 }}>
+              Surrounding area · {detail.neighborhood}
+            </p>
+            {!areaOpen ? (
+              <button type="button" className="more-btn" onClick={() => setAreaOpen(true)}>
+                Show area history ▾
+              </button>
+            ) : (
+              <>
+                {area && (
+                  <p className="evidence">
+                    Reporting year {area.reportingYear}: {area.vacant.toLocaleString()} vacant filings out of{" "}
+                    {area.storefronts.toLocaleString()}
+                    {area.vacancyRate != null ? ` (${Math.round(area.vacancyRate * 1000) / 10}%)` : ""}.
+                  </p>
+                )}
+                <ol className="timeline-list">
+                  {areaEvents.map((event) => (
+                    <li key={event.when + event.title}>
+                      <time dateTime={String(event.when)}>{formatDate(String(event.when))}</time>
                   <div>
                     <strong>{event.title}</strong>
                     <span className="sub">{event.source}</span>

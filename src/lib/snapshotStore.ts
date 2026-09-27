@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { availabilityFor } from "./availability";
+import { toIsoDate } from "./format";
 import { mergePermitEvents, normalizeTimeline } from "./timeline";
 import type { BreakdownItem, Gap, SearchFilters, Signal, StorefrontDetail, Summary } from "./types";
 
@@ -42,8 +43,7 @@ function str(value: unknown) {
 }
 
 function dateStr(value: unknown) {
-  if (!value) return null;
-  return String(value).slice(0, 10);
+  return toIsoDate(value);
 }
 
 function haversineMeters(aLat: number, aLng: number, bLat: number, bLng: number) {
