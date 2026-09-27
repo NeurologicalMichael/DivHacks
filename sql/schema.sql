@@ -10,6 +10,7 @@ DROP FUNCTION IF EXISTS refresh_signals();
 DROP FUNCTION IF EXISTS fit_components(text, text);
 
 DROP TABLE IF EXISTS signals CASCADE;
+DROP TABLE IF EXISTS renter_profiles CASCADE;
 DROP TABLE IF EXISTS owner_watches CASCADE;
 DROP TABLE IF EXISTS landlord_signals CASCADE;
 DROP TABLE IF EXISTS property_events CASCADE;
