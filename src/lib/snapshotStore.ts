@@ -321,7 +321,7 @@ function toSummary(property: Prop, category: string, snap: Snapshot): Summary {
   const signals = buildSignals(property, snap);
   const components = fitComponents(property, category, snap);
   const vacant = Boolean(property.vacant_on_1231) || Boolean(property.vacant_on_630);
-  const turnoverScore = Math.min(100, signals.reduce((sum, s) => sum + s.weight, 0));
+  const turnoverScore = signals.reduce((sum, s) => sum + s.weight, 0);
   const fitScore = Math.min(100, components.reduce((sum, item) => sum + item.points, 0));
   return {
     id: str(property.id),
