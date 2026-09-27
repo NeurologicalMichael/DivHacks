@@ -24,6 +24,8 @@ import { Onboarding } from "./Onboarding";
 import { OwnerPanel, type Watch } from "./OwnerPanel";
 
 const EXAMPLE = "Show me restaurant-ready storefronts in Brooklyn that may become available in the next 6 months.";
+const THEME_KEY = "leaselens-theme";
+type Theme = "day" | "night";
 const SUGGESTIONS = [
   EXAMPLE,
   "Vacant retail in Williamsburg",
@@ -77,6 +79,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
   const [watchNote, setWatchNote] = useState("");
   const [profile, setProfile] = useState<RenterProfile | null>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [theme, setTheme] = useState<Theme>("day");
   const [usingProfile, setUsingProfile] = useState(false);
   const [rankSource, setRankSource] = useState<"gemini" | "profile" | null>(null);
   const [matchReasons, setMatchReasons] = useState<Record<string, string>>({});
@@ -149,6 +152,16 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
     setWatches(payload.watches ?? []);
     setWatchNote(payload.note ?? "");
   }, []);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(THEME_KEY);
+    if (saved === "night" || saved === "day") setTheme(saved);
+  }, []);
+
+  function chooseTheme(next: Theme) {
+    setTheme(next);
+    window.localStorage.setItem(THEME_KEY, next);
+  }
 
   useEffect(() => {
     fetch("/api/health").then((response) => response.json()).then(setHealth).catch(() => setHealth(null));
@@ -228,8 +241,12 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
   );
 
   return (
-    <main className="shell">
+    <main className="shell" data-theme={theme}>
       <MapCanvas pins={pins} onSelect={(id) => openStorefront(id, filters?.category ?? null).catch((caught) => setError(caught.message))} />
+      <div className="theme-switch" role="group" aria-label="Appearance">
+        <button type="button" aria-pressed={theme === "day"} onClick={() => chooseTheme("day")}>Day</button>
+        <button type="button" aria-pressed={theme === "night"} onClick={() => chooseTheme("night")}>Night</button>
+      </div>
       <aside className="legend">
         <strong>Turnover index</strong>
         <div className="swatch"><i style={{ background: "#c2512a" }} /> 55–100, more evidence</div>
@@ -244,7 +261,10 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
       </aside>
       <section className="panel">
         <header className="brand">
-          <img className="mark" src="/leaselens-mark.png" alt="" />
+          <svg className="mark" viewBox="0 0 64 64" aria-hidden="true">
+            <circle cx="32" cy="32" r="22" fill="none" stroke="currentColor" strokeWidth="3.5" />
+            <circle cx="32" cy="32" r="11" fill="none" stroke="currentColor" strokeWidth="3.5" className="mark-iris" />
+          </svg>
           <div>
             <h1>LeaseLens</h1>
             <p>Find the storefront before the listing does.</p>
