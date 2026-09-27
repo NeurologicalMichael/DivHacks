@@ -40,12 +40,14 @@ export async function POST(request: Request) {
     let filters = emptyFilters();
     if (saved) {
       filters = profileToFilters(saved.profile);
+      source = "filters";
     } else if (body.query?.trim()) {
       const interpreted = await interpretSearch(body.query.trim());
       filters = interpreted.filters;
       source = interpreted.source;
     }
-    if (!saved) filters = cleanFilters(body.filters, filters);
+    // Always merge explicit filter overrides so Edit filter works with or without a profile.
+    if (body.filters) filters = cleanFilters(body.filters, filters);
     let results = await searchStorefronts(filters);
     let rankSource: "gemini" | "profile" | null = null;
     let matchReasons: Record<string, string> = {};

@@ -10,7 +10,11 @@ export type Pin = {
   lat: number;
   turnover: number;
   active: boolean;
+  label?: string;
 };
+
+const MAX_PINS = 40;
+const NYC: L.LatLngExpression = [40.7128, -73.97];
 
 export default function MapCanvas({
   pins,
@@ -21,62 +25,138 @@ export default function MapCanvas({
 }) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const markers = useRef<L.Marker[]>([]);
+  const layerRef = useRef<L.LayerGroup | null>(null);
+  const radiusRef = useRef<L.Circle[]>([]);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
-  const pinKey = pins.map((pin) => pin.id).join("|");
-  const activeId = pins.find((pin) => pin.active)?.id ?? "";
+
+  const pinKey = pins.map((p) => `${p.id}:${p.active ? 1 : 0}`).join("|");
+  const activeId = pins.find((p) => p.active)?.id ?? "";
 
   useEffect(() => {
-    if (!container.current || mapRef.current) return;
-    const map = L.map(container.current, {
+    const el = container.current;
+    if (!el || mapRef.current) return;
+
+    const map = L.map(el, {
       zoomControl: false,
       attributionControl: true,
-    }).setView([40.7, -73.97], 12);
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      scrollWheelZoom: true,
+      dragging: true,
+      doubleClickZoom: true,
+      boxZoom: true,
+      keyboard: true,
+    }).setView(NYC, 12);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "&copy; OpenStreetMap",
       maxZoom: 19,
+      className: "ll-tiles",
     }).addTo(map);
-    L.control.zoom({ position: "bottomleft" }).addTo(map);
+
+    L.control.zoom({ position: "bottomright" }).addTo(map);
+    layerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
-    requestAnimationFrame(() => map.invalidateSize());
+
+    const refresh = () => {
+      map.invalidateSize({ animate: false });
+    };
+    refresh();
+    const frame = requestAnimationFrame(refresh);
+    const timer = window.setTimeout(refresh, 120);
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(refresh) : null;
+    observer?.observe(el);
+    window.addEventListener("resize", refresh);
+
     return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+      observer?.disconnect();
+      window.removeEventListener("resize", refresh);
       map.remove();
       mapRef.current = null;
+      layerRef.current = null;
     };
   }, []);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
-    markers.current.forEach((marker) => marker.remove());
-    markers.current = pins.map((pin) => {
-      const level = pin.turnover >= 55 ? "high" : pin.turnover >= 35 ? "mid" : "low";
+    const group = layerRef.current;
+    if (!map || !group) return;
+
+    group.clearLayers();
+    radiusRef.current.forEach((c) => c.remove());
+    radiusRef.current = [];
+
+    const pinsToDraw =
+      pins.length > MAX_PINS
+        ? [
+            ...pins.filter((p) => p.active),
+            ...pins
+              .filter((p) => !p.active)
+              .slice(0, MAX_PINS - (pins.some((p) => p.active) ? 1 : 0)),
+          ]
+        : pins;
+
+    pinsToDraw.forEach((pin) => {
+      if (!Number.isFinite(pin.lat) || !Number.isFinite(pin.lng)) return;
+
+      if (pin.active) {
+        const outer = L.circle([pin.lat, pin.lng], {
+          radius: 420,
+          color: "#A78BFA",
+          weight: 0,
+          fillColor: "#C4B5FD",
+          fillOpacity: 0.22,
+          interactive: false,
+        }).addTo(map);
+        const inner = L.circle([pin.lat, pin.lng], {
+          radius: 180,
+          color: "#A78BFA",
+          weight: 0,
+          fillColor: "#C4B5FD",
+          fillOpacity: 0.28,
+          interactive: false,
+        }).addTo(map);
+        radiusRef.current.push(outer, inner);
+      }
+
       const icon = L.divIcon({
         className: "ll-marker",
-        html: `<button type="button" class="pin${pin.active ? " is-active" : ""}" data-level="${level}" aria-label="Turnover index ${pin.turnover}">${pin.turnover}</button>`,
-        iconSize: [40, 28],
-        iconAnchor: [20, 14],
+        html: pin.active
+          ? `<button type="button" class="pin-sq is-active" aria-label="${escapeHtml(pin.label ?? "Selected storefront")}"></button><span class="pin-label">${escapeHtml(pin.label ?? "Storefront")}</span>`
+          : `<button type="button" class="pin-sq" aria-label="Storefront marker"></button>`,
+        iconSize: pin.active ? [140, 36] : [16, 16],
+        iconAnchor: pin.active ? [8, 18] : [8, 8],
       });
-      return L.marker([pin.lat, pin.lng], { icon, keyboard: false })
+
+      L.marker([pin.lat, pin.lng], {
+        icon,
+        keyboard: false,
+        riseOnHover: true,
+        zIndexOffset: pin.active ? 600 : 0,
+      })
         .on("click", () => onSelectRef.current(pin.id))
-        .addTo(map);
+        .addTo(group);
     });
-  }, [pins]);
+
+    map.invalidateSize({ animate: false });
+  }, [pins, pinKey, activeId]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !pins.length) return;
-    const bounds = L.latLngBounds(pins.map((pin) => [pin.lat, pin.lng]));
-    const narrow = window.innerWidth < 860;
-    map.invalidateSize();
+    if (!map) return;
+    map.invalidateSize({ animate: false });
+    if (!pins.length) {
+      map.setView(NYC, 12, { animate: false });
+      return;
+    }
+    const bounds = L.latLngBounds(pins.map((pin) => [pin.lat, pin.lng] as [number, number]));
+    if (!bounds.isValid()) return;
     map.fitBounds(bounds, {
-      paddingTopLeft: narrow ? L.point(24, 60) : L.point(480, 40),
-      paddingBottomRight: narrow ? L.point(24, 360) : L.point(230, 40),
+      padding: [48, 48],
       maxZoom: 14,
       animate: true,
     });
-    // Refit only when the result set changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pinKey]);
 
@@ -84,13 +164,17 @@ export default function MapCanvas({
     const map = mapRef.current;
     const active = pins.find((pin) => pin.id === activeId);
     if (!map || !active) return;
-    const narrow = window.innerWidth < 860;
-    const point = map.project([active.lat, active.lng], Math.max(map.getZoom(), 14));
-    const shifted = point.subtract(narrow ? [0, -120] : [180, 0]);
-    map.setView(map.unproject(shifted, Math.max(map.getZoom(), 14)), Math.max(map.getZoom(), 14), {
-      animate: true,
-    });
+    map.invalidateSize({ animate: false });
+    map.setView([active.lat, active.lng], Math.max(map.getZoom(), 14), { animate: true });
   }, [activeId, pins]);
 
-  return <div ref={container} className="map-root" />;
+  return <div ref={container} className="map-root" role="application" aria-label="Storefront map" />;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }

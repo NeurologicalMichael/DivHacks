@@ -1,9 +1,32 @@
 import { availabilityFor } from "./availability";
 import { query } from "./db";
 import { normalizeProfile, profileBrief, type RenterProfile } from "./profile";
+import {
+  snapshotGapAnalysis,
+  snapshotGetStorefront,
+  snapshotHealth,
+  snapshotListNeighborhoods,
+  snapshotNearbyCategoryCount,
+  snapshotSearch,
+} from "./snapshotStore";
 import type { BreakdownItem, Gap, SearchFilters, StorefrontDetail, Summary } from "./types";
 
 type Row = Record<string, unknown>;
+
+let dbDownUntil = 0;
+
+/** Prefer Postgres; fall back to data/snapshot.json when DB is unreachable. */
+async function withDb<T>(run: () => Promise<T>, fallback: () => T | Promise<T>): Promise<T> {
+  if (Date.now() < dbDownUntil) return fallback();
+  try {
+    const result = await run();
+    dbDownUntil = 0;
+    return result;
+  } catch {
+    dbDownUntil = Date.now() + 30_000;
+    return fallback();
+  }
+}
 
 function date(value: unknown) {
   if (!value) return null;
@@ -64,6 +87,10 @@ function mapSummary(row: Row, category: string): Summary {
 }
 
 export async function searchStorefronts(filters: SearchFilters) {
+  return withDb(() => searchStorefrontsDb(filters), () => snapshotSearch(filters));
+}
+
+async function searchStorefrontsDb(filters: SearchFilters) {
   const params: unknown[] = [filters.category ?? "storefront"];
   const where: string[] = [];
 
@@ -156,6 +183,10 @@ export async function searchStorefronts(filters: SearchFilters) {
 }
 
 export async function getStorefront(id: string, category: string | null): Promise<StorefrontDetail | null> {
+  return withDb(() => getStorefrontDb(id, category), () => snapshotGetStorefront(id, category));
+}
+
+async function getStorefrontDb(id: string, category: string | null): Promise<StorefrontDetail | null> {
   const rows = await query<Row>(
     `SELECT p.*,
        fit_components(p.id, $2) AS components,
@@ -323,6 +354,13 @@ function median(values: number[]) {
 }
 
 export async function gapAnalysis(neighborhood: string, nearbyFood: number | null): Promise<Gap[]> {
+  return withDb(
+    () => gapAnalysisDb(neighborhood, nearbyFood),
+    () => snapshotGapAnalysis(neighborhood, nearbyFood),
+  );
+}
+
+async function gapAnalysisDb(neighborhood: string, nearbyFood: number | null): Promise<Gap[]> {
   const rows = await query<Row>(
     "SELECT name, borough, storefronts, categories, restaurant_count, restaurant_note FROM neighborhood_stats",
   );
@@ -377,6 +415,13 @@ export async function gapAnalysis(neighborhood: string, nearbyFood: number | nul
 }
 
 export async function nearbyCategoryCount(propertyId: string, category: string) {
+  return withDb(
+    () => nearbyCategoryCountDb(propertyId, category),
+    () => snapshotNearbyCategoryCount(propertyId, category),
+  );
+}
+
+async function nearbyCategoryCountDb(propertyId: string, category: string) {
   const rows = await query<Row>(
     `SELECT count(*)::int AS n
      FROM businesses b
@@ -389,25 +434,33 @@ export async function nearbyCategoryCount(propertyId: string, category: string) 
 }
 
 export async function listNeighborhoods() {
-  return query<{ name: string; borough: string; storefronts: number; vacant: number; restaurant_count: number | null }>(
-    `SELECT name, borough, storefronts, vacant, restaurant_count
-     FROM neighborhood_stats ORDER BY borough, name`,
+  return withDb(
+    () =>
+      query<{ name: string; borough: string; storefronts: number; vacant: number; restaurant_count: number | null }>(
+        `SELECT name, borough, storefronts, vacant, restaurant_count
+         FROM neighborhood_stats ORDER BY borough, name`,
+      ),
+    () => snapshotListNeighborhoods(),
   );
 }
 
 export async function health() {
-  const rows = await query<Row>(`
-    SELECT
-      (SELECT count(*) FROM properties)::int AS properties,
-      (SELECT count(*) FROM signals)::int AS signals,
-      (SELECT count(*) FROM businesses)::int AS businesses,
-      (SELECT extversion FROM pg_extension WHERE extname = 'timescaledb') AS timescaledb,
-      (SELECT PostGIS_Version()) AS postgis,
-      (SELECT count(*) FROM timescaledb_information.hypertables WHERE hypertable_name = 'property_events')::int AS hypertables,
-      (SELECT count(*) FROM v_storefronts WHERE signal_count >= 2)::int AS multi_signal
-  `);
-  return rows[0];
+  return withDb(async () => {
+    const rows = await query<Row>(`
+      SELECT
+        (SELECT count(*) FROM properties)::int AS properties,
+        (SELECT count(*) FROM signals)::int AS signals,
+        (SELECT count(*) FROM businesses)::int AS businesses,
+        (SELECT extversion FROM pg_extension WHERE extname = 'timescaledb') AS timescaledb,
+        (SELECT PostGIS_Version()) AS postgis,
+        (SELECT count(*) FROM timescaledb_information.hypertables WHERE hypertable_name = 'property_events')::int AS hypertables,
+        (SELECT count(*) FROM v_storefronts WHERE signal_count >= 2)::int AS multi_signal
+    `);
+    return { ...rows[0], mode: "postgres" };
+  }, () => snapshotHealth());
 }
+
+const memoryWatches = new Map<string, Set<string>>();
 
 export async function createLandlordSignal(input: {
   propertyId: string;
@@ -415,16 +468,25 @@ export async function createLandlordSignal(input: {
   note: string | null;
   email: string | null;
 }) {
-  const id = `opt-${crypto.randomUUID()}`;
-  const rows = await query<Row>(
-    `INSERT INTO landlord_signals (id, property_id, window_months, note, contact_email, is_demo)
-     SELECT $1, id, $3, $4, $5, FALSE FROM properties WHERE id = $2
-     RETURNING id, property_id, window_months`,
-    [id, input.propertyId, input.windowMonths, input.note, input.email],
+  return withDb(
+    async () => {
+      const id = `opt-${crypto.randomUUID()}`;
+      const rows = await query<Row>(
+        `INSERT INTO landlord_signals (id, property_id, window_months, note, contact_email, is_demo)
+         SELECT $1, id, $3, $4, $5, FALSE FROM properties WHERE id = $2
+         RETURNING id, property_id, window_months`,
+        [id, input.propertyId, input.windowMonths, input.note, input.email],
+      );
+      if (!rows[0]) return null;
+      await query("SELECT refresh_signals()");
+      return rows[0];
+    },
+    () => ({
+      id: `opt-${crypto.randomUUID()}`,
+      property_id: input.propertyId,
+      window_months: input.windowMonths,
+    }),
   );
-  if (!rows[0]) return null;
-  await query("SELECT refresh_signals()");
-  return rows[0];
 }
 
 let profileTableReady = false;
@@ -458,96 +520,132 @@ export async function saveRenterProfile(sessionId: string, input: unknown) {
   const profile = normalizeProfile(input);
   if (!profile) return null;
   const brief = profileBrief(profile);
-  await ensureProfileTable();
-  const rows = await query<Row>(
-    `INSERT INTO renter_profiles (
-       session_id, lease_kind, commercial_use, beds, budget, home_budget, size_band, timing,
-       near_subway, boroughs, neighborhoods, must_haves, concept, profile, brief
-     ) VALUES (
-       $1, $2, $3, $4, $5, $6, $7, $8,
-       $9, $10, $11, $12, $13, $14::jsonb, $15::jsonb
-     )
-     ON CONFLICT (session_id) DO UPDATE SET
-       lease_kind = EXCLUDED.lease_kind,
-       commercial_use = EXCLUDED.commercial_use,
-       beds = EXCLUDED.beds,
-       budget = EXCLUDED.budget,
-       home_budget = EXCLUDED.home_budget,
-       size_band = EXCLUDED.size_band,
-       timing = EXCLUDED.timing,
-       near_subway = EXCLUDED.near_subway,
-       boroughs = EXCLUDED.boroughs,
-       neighborhoods = EXCLUDED.neighborhoods,
-       must_haves = EXCLUDED.must_haves,
-       concept = EXCLUDED.concept,
-       profile = EXCLUDED.profile,
-       brief = EXCLUDED.brief,
-       updated_at = now()
-     RETURNING profile, brief, updated_at`,
-    [
-      sessionId,
-      profile.leaseKind,
-      profile.use,
-      profile.beds,
-      profile.budget,
-      profile.homeBudget,
-      profile.size,
-      profile.timing,
-      profile.nearSubway,
-      profile.boroughs,
-      profile.neighborhoods,
-      profile.mustHaves,
-      profile.concept || null,
-      JSON.stringify(profile),
-      JSON.stringify(brief),
-    ],
-  );
-  const row = rows[0];
-  if (!row) return null;
-  return {
-    profile: row.profile as RenterProfile,
-    brief: row.brief as ReturnType<typeof profileBrief>,
-    updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
-  };
+  try {
+    await ensureProfileTable();
+    const rows = await query<Row>(
+      `INSERT INTO renter_profiles (
+         session_id, lease_kind, commercial_use, beds, budget, home_budget, size_band, timing,
+         near_subway, boroughs, neighborhoods, must_haves, concept, profile, brief
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8,
+         $9, $10, $11, $12, $13, $14::jsonb, $15::jsonb
+       )
+       ON CONFLICT (session_id) DO UPDATE SET
+         lease_kind = EXCLUDED.lease_kind,
+         commercial_use = EXCLUDED.commercial_use,
+         beds = EXCLUDED.beds,
+         budget = EXCLUDED.budget,
+         home_budget = EXCLUDED.home_budget,
+         size_band = EXCLUDED.size_band,
+         timing = EXCLUDED.timing,
+         near_subway = EXCLUDED.near_subway,
+         boroughs = EXCLUDED.boroughs,
+         neighborhoods = EXCLUDED.neighborhoods,
+         must_haves = EXCLUDED.must_haves,
+         concept = EXCLUDED.concept,
+         profile = EXCLUDED.profile,
+         brief = EXCLUDED.brief,
+         updated_at = now()
+       RETURNING profile, brief, updated_at`,
+      [
+        sessionId,
+        profile.leaseKind,
+        profile.use,
+        profile.beds,
+        profile.budget,
+        profile.homeBudget,
+        profile.size,
+        profile.timing,
+        profile.nearSubway,
+        profile.boroughs,
+        profile.neighborhoods,
+        profile.mustHaves,
+        profile.concept || null,
+        JSON.stringify(profile),
+        JSON.stringify(brief),
+      ],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      profile: row.profile as RenterProfile,
+      brief: row.brief as ReturnType<typeof profileBrief>,
+      updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
+    };
+  } catch {
+    return {
+      profile,
+      brief,
+      updatedAt: new Date().toISOString(),
+    };
+  }
 }
 
 export async function loadRenterProfile(sessionId: string) {
-  await ensureProfileTable();
-  const rows = await query<Row>(
-    `SELECT profile, brief, updated_at FROM renter_profiles WHERE session_id = $1`,
-    [sessionId],
-  );
-  const row = rows[0];
-  if (!row) return null;
-  const profile = normalizeProfile(row.profile);
-  if (!profile) return null;
-  return {
-    profile,
-    brief: profileBrief(profile),
-    updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
-  };
+  try {
+    await ensureProfileTable();
+    const rows = await query<Row>(
+      `SELECT profile, brief, updated_at FROM renter_profiles WHERE session_id = $1`,
+      [sessionId],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    const profile = normalizeProfile(row.profile);
+    if (!profile) return null;
+    return {
+      profile,
+      brief: profileBrief(profile),
+      updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function watchProperty(sessionId: string, propertyId: string) {
-  const id = `watch-${crypto.randomUUID()}`;
-  const rows = await query<Row>(
-    `INSERT INTO owner_watches (id, session_id, property_id)
-     SELECT $1, $2, id FROM properties WHERE id = $3
-     ON CONFLICT (session_id, property_id) DO UPDATE SET created_at = owner_watches.created_at
-     RETURNING id, property_id`,
-    [id, sessionId, propertyId],
+  return withDb(
+    async () => {
+      const id = `watch-${crypto.randomUUID()}`;
+      const rows = await query<Row>(
+        `INSERT INTO owner_watches (id, session_id, property_id)
+         SELECT $1, $2, id FROM properties WHERE id = $3
+         ON CONFLICT (session_id, property_id) DO UPDATE SET created_at = owner_watches.created_at
+         RETURNING id, property_id`,
+        [id, sessionId, propertyId],
+      );
+      return rows[0] ?? null;
+    },
+    () => {
+      const set = memoryWatches.get(sessionId) ?? new Set<string>();
+      set.add(propertyId);
+      memoryWatches.set(sessionId, set);
+      return { id: `watch-${propertyId}`, property_id: propertyId };
+    },
   );
-  return rows[0] ?? null;
 }
 
 export async function unwatchProperty(sessionId: string, propertyId: string) {
-  await query("DELETE FROM owner_watches WHERE session_id = $1 AND property_id = $2", [
-    sessionId,
-    propertyId,
-  ]);
+  return withDb(
+    async () => {
+      await query("DELETE FROM owner_watches WHERE session_id = $1 AND property_id = $2", [
+        sessionId,
+        propertyId,
+      ]);
+    },
+    () => {
+      memoryWatches.get(sessionId)?.delete(propertyId);
+    },
+  );
 }
 
 export async function ownerRadar(sessionId: string) {
+  return withDb(
+    () => ownerRadarDb(sessionId),
+    () => ownerRadarSnapshot(sessionId),
+  );
+}
+
+async function ownerRadarDb(sessionId: string) {
   const watches = await query<Row>(
     `SELECT w.property_id, p.address, p.neighborhood, p.borough, p.lat, p.lng, p.turnover_score
      FROM owner_watches w
@@ -590,4 +688,29 @@ export async function ownerRadar(sessionId: string) {
     });
   }
   return results;
+}
+
+function ownerRadarSnapshot(sessionId: string) {
+  const ids = [...(memoryWatches.get(sessionId) ?? [])];
+  return ids.map((propertyId) => {
+    const detail = snapshotGetStorefront(propertyId, "storefront");
+    return {
+      propertyId,
+      address: detail?.address ?? propertyId,
+      neighborhood: detail?.neighborhood ?? "",
+      borough: detail?.borough ?? "",
+      lat: detail?.lat ?? 0,
+      lng: detail?.lng ?? 0,
+      turnoverScore: detail?.turnoverScore ?? 0,
+      nearby: (detail?.nearby ?? []).slice(0, 6).map((row) => ({
+        address: row.name ?? row.category,
+        neighborhood: detail?.neighborhood ?? "",
+        label: row.category,
+        evidence: row.activity ?? "",
+        observedAt: null as string | null,
+        provenance: "nyc_open_data",
+        meters: row.meters,
+      })),
+    };
+  });
 }

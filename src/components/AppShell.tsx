@@ -3,13 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import { categoryLabel } from "@/lib/catalog";
-import { provenanceLabel, titleAddress } from "@/lib/format";
+import { titleAddress } from "@/lib/format";
+import { emptyFilters } from "@/lib/parseQuery";
 import {
   PROFILE_SKIP_KEY,
   loadProfile,
-  profileHeadline,
-  profileLimits,
-  profileNotes,
   profileSentence,
   profileToFilters,
   saveProfile,
@@ -18,29 +16,23 @@ import {
 import type { Gap, SearchFilters, StorefrontDetail, Summary } from "@/lib/types";
 import type { Pin } from "./MapCanvas";
 import { DetailPanel } from "./DetailPanel";
+import { FilterBar } from "./FilterBar";
 import { GapPanel } from "./GapPanel";
+import { Landing, type Persona } from "./Landing";
 import { LandlordPanel } from "./LandlordPanel";
 import { Onboarding } from "./Onboarding";
-import { OwnerPanel, type Watch } from "./OwnerPanel";
+import type { Watch } from "./OwnerPanel";
 
 const EXAMPLE = "Show me restaurant-ready storefronts in Brooklyn that may become available in the next 6 months.";
-const THEME_KEY = "leaselens-theme";
-type Theme = "day" | "night";
-const SUGGESTIONS = [
-  EXAMPLE,
-  "Vacant retail in Williamsburg",
-  "High turnover near subway in Park Slope",
-  "Grocery in Bushwick",
-];
 
 type Mode = "explore" | "gap" | "owner" | "landlord";
+type SortKey = "turnover" | "fit" | "name";
 type Health = {
   ok?: boolean;
   properties?: number;
   timescaledb?: string;
-  postgis?: string;
   gemini?: boolean;
-  hypertables?: number;
+  mode?: string;
 };
 
 function sessionId() {
@@ -52,14 +44,21 @@ function sessionId() {
   return created;
 }
 
+function greeting(persona: Persona | null, profile: RenterProfile | null) {
+  if (persona === "shop_owner") return "Hi, Shop Owner!";
+  if (persona === "landlord") return "Hi, Landlord!";
+  if (persona === "entrepreneur") return "Hi Entrepreneur!";
+  if (profile) return "Hi there!";
+  return "Hi!";
+}
+
 export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]; onSelect: (id: string) => void }> }) {
+  const [persona, setPersona] = useState<Persona | null>(null);
   const [mode, setMode] = useState<Mode>("explore");
   const [query, setQuery] = useState(EXAMPLE);
   const [filters, setFilters] = useState<SearchFilters | null>(null);
   const [results, setResults] = useState<Summary[]>([]);
-  const [interpretation, setInterpretation] = useState("");
-  const [interpreter, setInterpreter] = useState("");
-  const [summary, setSummary] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>("turnover");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<StorefrontDetail | null>(null);
   const [explanation, setExplanation] = useState<{ text: string; source: string } | null>(null);
@@ -67,7 +66,6 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [explaining, setExplaining] = useState(false);
-  const [methodOpen, setMethodOpen] = useState(false);
   const [gapNeighborhoods, setGapNeighborhoods] = useState<{ name: string; borough: string }[]>([]);
   const [gapNeighborhood, setGapNeighborhood] = useState("Williamsburg");
   const [gaps, setGaps] = useState<Gap[]>([]);
@@ -79,19 +77,19 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
   const [watchNote, setWatchNote] = useState("");
   const [profile, setProfile] = useState<RenterProfile | null>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
-  const [theme, setTheme] = useState<Theme>("day");
   const [usingProfile, setUsingProfile] = useState(false);
-  const [rankSource, setRankSource] = useState<"gemini" | "profile" | null>(null);
-  const [matchReasons, setMatchReasons] = useState<Record<string, string>>({});
+  const [booted, setBooted] = useState(false);
 
-  const search = useCallback(async (nextQuery: string, keepMode = false, options?: { filters?: Partial<SearchFilters>; fromProfile?: boolean }) => {
+  const search = useCallback(async (
+    nextQuery: string,
+    options?: { filters?: Partial<SearchFilters>; fromProfile?: boolean; keepSelection?: boolean },
+  ) => {
     setLoading(true);
     setError("");
-    if (!keepMode) {
+    if (!options?.keepSelection) {
       setSelectedId(null);
       setDetail(null);
       setExplanation(null);
-      setMode("explore");
     }
     try {
       const response = await fetch("/api/search", {
@@ -99,7 +97,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: nextQuery,
-          summarize: !options?.fromProfile,
+          summarize: false,
           filters: options?.filters,
           sessionId: sessionId(),
           fromProfile: Boolean(options?.fromProfile),
@@ -109,12 +107,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
       if (!response.ok) throw new Error(payload.error || "Search failed");
       setResults(payload.results);
       setFilters(payload.filters);
-      setInterpretation(payload.interpretation);
-      setInterpreter(payload.interpreter);
-      setSummary(payload.summary);
       setUsingProfile(Boolean(options?.fromProfile));
-      setRankSource(payload.rankSource ?? null);
-      setMatchReasons(payload.matchReasons ?? {});
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Search failed");
     } finally {
@@ -125,12 +118,16 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
   const openStorefront = useCallback(async (id: string, category: string | null) => {
     setSelectedId(id);
     setExplanation(null);
-    setMode("explore");
+    if (mode === "gap" || mode === "landlord") {
+      // keep mode
+    } else if (persona !== "shop_owner" && persona !== "landlord") {
+      setMode("explore");
+    }
     const response = await fetch(`/api/storefronts/${encodeURIComponent(id)}?category=${encodeURIComponent(category ?? "storefront")}`);
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "Could not load storefront");
     setDetail(payload);
-  }, []);
+  }, [mode, persona]);
 
   const loadGap = useCallback(async (neighborhood: string, propertyId?: string | null) => {
     const params = new URLSearchParams({ neighborhood });
@@ -154,20 +151,14 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
   }, []);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(THEME_KEY);
-    if (saved === "night" || saved === "day") setTheme(saved);
-  }, []);
-
-  function chooseTheme(next: Theme) {
-    setTheme(next);
-    window.localStorage.setItem(THEME_KEY, next);
-  }
-
-  useEffect(() => {
-    fetch("/api/health").then((response) => response.json()).then(setHealth).catch(() => setHealth(null));
-    fetch("/api/gap").then((response) => response.json()).then((payload) => {
+    fetch("/api/health")
+      .then((r) => r.json())
+      .then((payload) => setHealth({ ...payload, ok: payload.ok !== false && !payload.error }))
+      .catch(() => setHealth(null));
+    fetch("/api/gap").then((r) => r.json()).then((payload) => {
       setGapNeighborhoods(payload.neighborhoods ?? []);
     }).catch(() => undefined);
+
     let cancelled = false;
     (async () => {
       const id = sessionId();
@@ -178,29 +169,22 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
         if (payload.profile) {
           saved = payload.profile;
           saveProfile(payload.profile);
-        } else if (saved) {
-          await fetch("/api/profile", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sessionId: id, profile: saved }),
-          });
         }
       } catch {
-        // Keep the browser copy if the database is unreachable.
+        // offline profile ok
       }
       if (cancelled) return;
       if (saved) {
         setProfile(saved);
+        setPersona("entrepreneur");
         const sentence = profileSentence(saved);
         setQuery(sentence);
-        search(sentence, false, { filters: profileToFilters(saved), fromProfile: true }).catch(() => undefined);
-        return;
+        await search(sentence, { filters: profileToFilters(saved), fromProfile: true });
+      } else if (window.localStorage.getItem(PROFILE_SKIP_KEY) === "1") {
+        setPersona("entrepreneur");
+        await search(EXAMPLE);
       }
-      if (window.localStorage.getItem(PROFILE_SKIP_KEY) === "1") {
-        search(EXAMPLE).catch(() => undefined);
-        return;
-      }
-      setOnboardingOpen(true);
+      setBooted(true);
     })();
     return () => {
       cancelled = true;
@@ -212,221 +196,299 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
     window.localStorage.removeItem(PROFILE_SKIP_KEY);
     setProfile(next);
     setOnboardingOpen(false);
+    setPersona("entrepreneur");
     void (async () => {
-      const response = await fetch("/api/profile", {
+      await fetch("/api/profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId: sessionId(), profile: next }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Could not save profile");
-      const stored = payload.profile as RenterProfile;
-      saveProfile(stored);
-      setProfile(stored);
-      const sentence = profileSentence(stored);
+      const sentence = profileSentence(next);
       setQuery(sentence);
-      await search(sentence, false, { filters: profileToFilters(stored), fromProfile: true });
+      await search(sentence, { filters: profileToFilters(next), fromProfile: true });
     })().catch((caught) => setError(caught instanceof Error ? caught.message : "Could not save profile"));
   }
 
+  function choosePersona(next: Persona) {
+    setPersona(next);
+    // Load results immediately so the map/list are live behind onboarding (matches Figma).
+    if (!results.length) {
+      search(EXAMPLE).catch((caught) => setError(caught.message));
+    }
+    if (next === "shop_owner") {
+      setMode("owner");
+      loadWatches().catch((caught) => setError(caught.message));
+      return;
+    }
+    if (next === "landlord") {
+      setMode("landlord");
+      return;
+    }
+    setMode("explore");
+    if (!profile) setOnboardingOpen(true);
+  }
+
+  function applyFilters(next: SearchFilters) {
+    setFilters(next);
+    const place = next.neighborhoods[0] || next.boroughs[0] || "NYC";
+    const use = next.category ? categoryLabel(next.category).toLowerCase() : "storefront";
+    const sentence = `${use} storefronts in ${place}${next.months ? ` in the next ${next.months} months` : ""}${next.nearSubway ? " near a subway" : ""}`;
+    setQuery(sentence);
+    search(sentence, { filters: next, fromProfile: false }).catch((caught) => setError(caught.message));
+  }
+
+  const sorted = useMemo(() => {
+    const copy = [...results];
+    if (sortKey === "fit") copy.sort((a, b) => b.fitScore - a.fitScore);
+    else if (sortKey === "name") copy.sort((a, b) => a.address.localeCompare(b.address));
+    else copy.sort((a, b) => b.turnoverScore - a.turnoverScore);
+    return copy;
+  }, [results, sortKey]);
+
   const pins = useMemo<Pin[]>(
-    () => results.map((result) => ({
-      id: result.id,
-      lng: result.lng,
-      lat: result.lat,
-      turnover: result.turnoverScore,
-      active: result.id === selectedId,
-    })),
-    [results, selectedId],
+    () =>
+      sorted.map((result) => ({
+        id: result.id,
+        lng: result.lng,
+        lat: result.lat,
+        turnover: result.turnoverScore,
+        active: result.id === selectedId,
+        label: result.neighborhood ? `${result.neighborhood} storefront` : titleAddress(result.address),
+      })),
+    [sorted, selectedId],
   );
 
+  if (!booted) {
+    return <div className="boot">Loading LeaseLens…</div>;
+  }
+
+  if (!persona) {
+    return <Landing onChoose={choosePersona} />;
+  }
+
+  const listTitle = persona === "shop_owner" ? "My Storefront" : "Sort by";
+
   return (
-    <main className="shell" data-theme={theme}>
-      <MapCanvas pins={pins} onSelect={(id) => openStorefront(id, filters?.category ?? null).catch((caught) => setError(caught.message))} />
-      <div className="theme-switch" role="group" aria-label="Appearance">
-        <button type="button" aria-pressed={theme === "day"} onClick={() => chooseTheme("day")}>Day</button>
-        <button type="button" aria-pressed={theme === "night"} onClick={() => chooseTheme("night")}>Night</button>
-      </div>
-      <aside className="legend">
-        <strong>Turnover index</strong>
-        <div className="swatch"><i style={{ background: "#c2512a" }} /> 55–100, more evidence</div>
-        <div className="swatch"><i style={{ background: "#6d5844" }} /> 35–54</div>
-        <div className="swatch"><i style={{ background: "#1b1714" }} /> Under 35</div>
-        <p>The number is a derived index, not the chance a space will list.</p>
-      </aside>
-      <aside className="status">
-        {health?.ok
-          ? `Tiger Data ${health.timescaledb} · PostGIS · ${health.properties ?? 0} storefronts${health.gemini ? " · Gemini on" : " · Gemini key not set"}`
-          : "Connecting to the database…"}
-      </aside>
-      <section className="panel">
-        <header className="brand">
-          <svg className="mark" viewBox="0 0 64 64" aria-hidden="true">
-            <circle cx="32" cy="32" r="22" fill="none" stroke="currentColor" strokeWidth="3.5" />
-            <circle cx="32" cy="32" r="11" fill="none" stroke="currentColor" strokeWidth="3.5" className="mark-iris" />
-          </svg>
-          <div>
-            <h1>LeaseLens</h1>
-            <p>Find the storefront before the listing does.</p>
-          </div>
-        </header>
-        <div className="profile-note">
-          <button type="button" className="back" onClick={() => setOnboardingOpen(true)}>
-            {profile ? "Edit profile" : "Build a profile"}
+    <main className="app">
+      <header className="topbar">
+        <div className="topbar-left">
+          <button type="button" className="logo" onClick={() => setPersona(null)}>
+            LeaseLens
+          </button>
+          <button type="button" className="greeting" onClick={() => setOnboardingOpen(true)}>
+            {greeting(persona, profile)}
           </button>
         </div>
-        <div className="modes">
-          {(["explore", "gap", "owner", "landlord"] as Mode[]).map((item) => (
-            <button key={item} className={mode === item ? "active" : ""} onClick={() => {
-              setMode(item);
-              if (item === "owner") loadWatches().catch((caught) => setError(caught.message));
-              if (item === "gap") {
-                loadGap(detail?.neighborhood || gapNeighborhood, detail?.id).catch((caught) => setError(caught.message));
-              }
-            }}>
-              {item === "explore" ? "Explore" : item === "gap" ? "Gaps" : item === "owner" ? "Owner" : "Landlord"}
-            </button>
-          ))}
-        </div>
-        <form className="search" onSubmit={(event) => { event.preventDefault(); search(query); }}>
-          <input aria-label="Search storefronts" value={query} onChange={(event) => setQuery(event.target.value)} />
-          <button type="submit" disabled={loading}>{loading ? "…" : "Search"}</button>
+        <form
+          className="top-search"
+          onSubmit={(event) => {
+            event.preventDefault();
+            search(query).catch((caught) => setError(caught.message));
+          }}
+        >
+          <span className="search-icon" aria-hidden="true">
+            ⌕
+          </span>
+          <input
+            aria-label="Search storefronts"
+            placeholder="Search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
         </form>
-        <div className="chips">
-          {SUGGESTIONS.map((suggestion) => (
-            <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); search(suggestion); }}>{suggestion === EXAMPLE ? "Brooklyn, restaurant, 6 months" : suggestion}</button>
-          ))}
+        <div className="topbar-right">
+          {loading && <span className="muted">Searching…</span>}
+          {health && (
+            <span className="muted status-pill">
+              {health.properties ?? 0} storefronts
+              {health.mode === "snapshot" ? " · snapshot" : ""}
+              {health.gemini ? " · Gemini" : ""}
+            </span>
+          )}
         </div>
-        {mode === "explore" && !detail && (
-          <>
-            {interpretation && <p className="interpretation">{interpretation}</p>}
-            <p className="meta-line">
-              {interpreter === "gemini" ? "Filters read by Gemini, then queried in PostGIS." : "Filters read locally, then queried in PostGIS."}
-              {filters?.category ? ` Fit index uses ${categoryLabel(filters.category)}.` : ""}
-            </p>
-            {usingProfile && profile && (
-              <div className="summary-note">
-                <strong>{profileHeadline(profile)}</strong>
-                <p className="disclaimer">
-                  {rankSource === "gemini"
-                    ? "Gemini ranked these from your saved profile. It only reordered filings the database already returned."
-                    : "Your profile is saved. Gemini is not configured, so these filings are ordered from the sorted profile priorities."}
-                  {" "}{profileLimits(profile)}{profile.concept ? ` Concept: ${profile.concept}.` : ""}
-                </p>
-              </div>
+      </header>
+
+      <FilterBar filters={filters ?? emptyFilters()} onApply={applyFilters} />
+
+      <div className="workspace">
+        <aside className="rail">
+          <div className="rail-head">
+            <strong>{listTitle}</strong>
+            {persona !== "shop_owner" && (
+              <select aria-label="Sort results" value={sortKey} onChange={(event) => setSortKey(event.target.value as SortKey)}>
+                <option value="turnover">Turnover</option>
+                <option value="fit">Fit</option>
+                <option value="name">Address</option>
+              </select>
             )}
-            {summary && <div className="summary-note"><strong>Gemini, from the matched rows.</strong> {summary}</div>}
-            {error && <p className="error" style={{ margin: "0 18px" }}>{error}</p>}
-          </>
-        )}
-        <div className="panel-scroll">
-          {mode === "explore" && !detail && results.map((result, index) => (
-            <button className={`card${result.id === selectedId ? " active" : ""}`} style={{ animationDelay: `${index * 0.03}s` }} key={result.id} onClick={() => openStorefront(result.id, filters?.category ?? null).catch((caught) => setError(caught.message))}>
-              <div className="card-top">
-                <div>
-                  <h2 className="address">{titleAddress(result.address)}</h2>
-                  <div className="sub">{result.neighborhood} · {result.borough} · filing {result.reportingYear}</div>
-                </div>
-                <div className="scores">
-                  <div className="score-pair"><b>{result.turnoverScore}</b><span>Turnover</span></div>
-                  <div className="score-pair"><b>{result.fitScore}</b><span>{categoryLabel(result.fitCategory)}</span></div>
-                </div>
-              </div>
-              <p className="avail">{result.availability.label}</p>
-              {(matchReasons[result.id] || (usingProfile && profile && profileNotes(profile, result).length > 0)) && (
-                <p className="disclaimer">{matchReasons[result.id] ?? (profile ? profileNotes(profile, result).join(" · ") : "")}</p>
+          </div>
+
+          {persona === "shop_owner" ? (
+            <div className="rail-scroll">
+              {watchNote && <p className="disclaimer pad">{watchNote}</p>}
+              {watches.length === 0 && (
+                <p className="empty pad">No watches yet. Open a space from Explore and choose Watch privately.</p>
               )}
-              <div className="signal-row">
-                {result.topSignals.map((signal) => (
-                  <span className="pill" key={signal.label}>{signal.label} · {provenanceLabel(signal.provenance)}</span>
-                ))}
-              </div>
-            </button>
-          ))}
-          {mode === "explore" && !detail && !loading && results.length === 0 && <p className="empty">No storefronts matched those filters. The records loaded for this demo are a sample of opportunity filings, not every space in the city.</p>}
-          {mode === "explore" && detail && (
-            <DetailPanel
-              detail={detail}
-              explanation={explanation}
-              busy={explaining}
-              onBack={() => { setDetail(null); setSelectedId(null); }}
-              onExplain={async () => {
-                setExplaining(true);
-                try {
-                  const response = await fetch("/api/explain", {
+              {watches.map((watch) => (
+                <div key={watch.propertyId} className="watch-row">
+                  <button
+                    type="button"
+                    className={`result-card${watch.propertyId === selectedId ? " active" : ""}`}
+                    onClick={() => openStorefront(watch.propertyId, filters?.category ?? null).catch((caught) => setError(caught.message))}
+                  >
+                    <span className="thumb" />
+                    <span className="result-meta">
+                      <b>{titleAddress(watch.address)}</b>
+                      <span className="sub">
+                        {watch.neighborhood} · T{watch.turnoverScore}
+                      </span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="text-btn"
+                    onClick={async () => {
+                      await fetch(`/api/owner?sessionId=${sessionId()}&propertyId=${encodeURIComponent(watch.propertyId)}`, { method: "DELETE" });
+                      await loadWatches();
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="ghost pad-btn"
+                onClick={() => {
+                  setPersona("entrepreneur");
+                  setMode("explore");
+                }}
+              >
+                Browse more spaces
+              </button>
+            </div>
+          ) : (
+            <div className="rail-scroll">
+              {error && <p className="error pad">{error}</p>}
+              {sorted.map((result) => (
+                <button
+                  key={result.id}
+                  type="button"
+                  className={`result-card${result.id === selectedId ? " active" : ""}`}
+                  onClick={() => openStorefront(result.id, filters?.category ?? null).catch((caught) => setError(caught.message))}
+                >
+                  <span className="thumb" />
+                  <span className="result-meta">
+                    <b>{titleAddress(result.address)}</b>
+                    <span className="sub">
+                      {result.neighborhood} · T{result.turnoverScore} · F{result.fitScore}
+                    </span>
+                  </span>
+                </button>
+              ))}
+              {!loading && sorted.length === 0 && (
+                <p className="empty pad">No storefronts matched those filters.</p>
+              )}
+            </div>
+          )}
+        </aside>
+
+        <section className="map-pane">
+          <MapCanvas
+            pins={pins}
+            onSelect={(id) => openStorefront(id, filters?.category ?? null).catch((caught) => setError(caught.message))}
+          />
+        </section>
+
+        <aside className="detail-rail">
+          <div className="detail-scroll">
+            {mode === "gap" && (
+              <GapPanel
+                neighborhoods={gapNeighborhoods}
+                neighborhood={gapNeighborhood}
+                onNeighborhood={(name) => loadGap(name, detail?.neighborhood === name ? detail.id : null).catch((caught) => setError(caught.message))}
+                gaps={gaps}
+                narrative={gapNarrative}
+                narrativeSource={gapSource}
+                disclaimer={gapDisclaimer}
+                nearbyFood={nearbyFood}
+              />
+            )}
+            {mode === "landlord" && (
+              <LandlordPanel
+                key={selectedId ?? "landlord"}
+                options={results}
+                selectedId={selectedId}
+                onSubmit={async (input) => {
+                  const response = await fetch("/api/landlord", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ propertyId: detail.id, category: filters?.category }),
+                    body: JSON.stringify(input),
                   });
                   const payload = await response.json();
-                  if (!response.ok) throw new Error(payload.error);
-                  setExplanation({ text: payload.text, source: payload.source });
-                } catch (caught) {
-                  setError(caught instanceof Error ? caught.message : "Explanation failed");
-                } finally {
-                  setExplaining(false);
-                }
-              }}
-              onGap={() => {
-                setMode("gap");
-                loadGap(detail.neighborhood, detail.id).catch((caught) => setError(caught.message));
-              }}
-              onWatch={async () => {
-                await fetch("/api/owner", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ sessionId: sessionId(), propertyId: detail.id }),
-                });
-                await loadWatches();
-                setMode("owner");
-              }}
-              onLandlord={() => setMode("landlord")}
-            />
-          )}
-          {mode === "gap" && (
-            <GapPanel
-              neighborhoods={gapNeighborhoods}
-              neighborhood={gapNeighborhood}
-              onNeighborhood={(name) => loadGap(name, detail?.neighborhood === name ? detail.id : null).catch((caught) => setError(caught.message))}
-              gaps={gaps}
-              narrative={gapNarrative}
-              narrativeSource={gapSource}
-              disclaimer={gapDisclaimer}
-              nearbyFood={nearbyFood}
-            />
-          )}
-          {mode === "owner" && (
-            <OwnerPanel
-              watches={watches}
-              note={watchNote}
-              onOpen={(id) => openStorefront(id, filters?.category ?? null).catch((caught) => setError(caught.message))}
-              onRemove={async (id) => {
-                await fetch(`/api/owner?sessionId=${sessionId()}&propertyId=${encodeURIComponent(id)}`, { method: "DELETE" });
-                await loadWatches();
-              }}
-            />
-          )}
-          {mode === "landlord" && (
-            <LandlordPanel
-              key={selectedId ?? "landlord"}
-              options={results}
-              selectedId={selectedId}
-              onSubmit={async (input) => {
-                const response = await fetch("/api/landlord", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(input),
-                });
-                const payload = await response.json();
-                if (!response.ok) throw new Error(payload.error || "Could not save");
-                await search(query, true, usingProfile && profile ? { filters: profileToFilters(profile), fromProfile: true } : undefined);
-                return payload.publicSignal as string;
-              }}
-            />
-          )}
-          <button className="back" onClick={() => setMethodOpen(true)}>How the indexes are built</button>
-        </div>
-      </section>
+                  if (!response.ok) throw new Error(payload.error || "Could not save");
+                  await search(query, {
+                    keepSelection: true,
+                    filters: usingProfile && profile ? profileToFilters(profile) : filters ?? undefined,
+                    fromProfile: usingProfile,
+                  });
+                  return payload.publicSignal as string;
+                }}
+              />
+            )}
+            {mode !== "gap" && mode !== "landlord" && detail && (
+              <DetailPanel
+                detail={detail}
+                explanation={explanation}
+                busy={explaining}
+                showAiSummary={persona === "entrepreneur"}
+                onExplain={async () => {
+                  setExplaining(true);
+                  try {
+                    const response = await fetch("/api/explain", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ propertyId: detail.id, category: filters?.category }),
+                    });
+                    const payload = await response.json();
+                    if (!response.ok) throw new Error(payload.error);
+                    setExplanation({ text: payload.text, source: payload.source });
+                  } catch (caught) {
+                    setError(caught instanceof Error ? caught.message : "Explanation failed");
+                  } finally {
+                    setExplaining(false);
+                  }
+                }}
+                onGap={() => {
+                  setMode("gap");
+                  loadGap(detail.neighborhood, detail.id).catch((caught) => setError(caught.message));
+                }}
+                onWatch={async () => {
+                  await fetch("/api/owner", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ sessionId: sessionId(), propertyId: detail.id }),
+                  });
+                  await loadWatches();
+                  setMode("owner");
+                  setPersona("shop_owner");
+                }}
+                onLandlord={() => {
+                  setMode("landlord");
+                  setPersona("landlord");
+                }}
+              />
+            )}
+            {mode !== "gap" && mode !== "landlord" && !detail && (
+              <div className="detail-empty">
+                <h2>Select a storefront</h2>
+                <p>Click a result or map marker to see turnover evidence, fit, and history.</p>
+              </div>
+            )}
+          </div>
+        </aside>
+      </div>
+
       {onboardingOpen && (
         <Onboarding
           initial={profile}
@@ -436,27 +498,8 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
             setOnboardingOpen(false);
             search(EXAMPLE).catch((caught) => setError(caught.message));
           }}
-          onClose={profile ? () => setOnboardingOpen(false) : undefined}
+          onClose={profile || persona ? () => setOnboardingOpen(false) : undefined}
         />
-      )}
-      {methodOpen && (
-        <div className="method" onClick={() => setMethodOpen(false)}>
-          <article onClick={(event) => event.stopPropagation()}>
-            <h2>What is real, derived, or demo</h2>
-            <p>LeaseLens scores storefronts from public records already stored in Tiger Data. A high index means more of those records are present. It does not mean a space will be listed.</p>
-            <ul>
-              <li>City records: NYC Storefront Registry vacancies, activity, sale dates, and lease dates when the filing includes them. DOB NOW jobs, DCWP licenses, DOF rolling sales, PLUTO lot attributes, MTA stations, DOT pedestrian counts, and DOHMH restaurants.</li>
-              <li>Derived: the turnover index, fit index, activity-change notes, neighborhood sale medians, and gap comparisons. Every component is shown with its source.</li>
-              <li>Not invented: missing lease dates stay blank. Census ACS household income is blank because the Census API required a key that was not configured.</li>
-              <li>Demo: three anonymous landlord opt-ins are seeded and labeled demo. Anything you submit in Landlord mode is stored as a real opt-in for this database and still hides your note and email.</li>
-              <li>Joins on permits, licenses, sales, and PLUTO use the tax lot. They are not confirmed unit matches.</li>
-              <li>Food gaps use DOHMH restaurant locations. The registry’s FOOD SERVICES label is too sparse to treat as a census of restaurants.</li>
-              <li>Vacancy counts toward “available in the next 6 months” only when the latest filing is reporting year 2024 or 2025.</li>
-              <li>SpaceXAI / Photon was not available here, so it is not integrated.</li>
-            </ul>
-            <button className="primary" onClick={() => setMethodOpen(false)}>Close</button>
-          </article>
-        </div>
       )}
     </main>
   );

@@ -24,10 +24,10 @@ import {
 } from "@/lib/profile";
 
 const STEPS = [
-  { id: "Lease", title: "What are you looking to lease?", lead: "This is the start of the profile used to rank places." },
-  { id: "Space", title: "What does the space need to be?", lead: "One clear choice is enough. Details can wait." },
-  { id: "Budget", title: "Budget and timing", lead: "A range is enough. Exact rent is not required." },
-  { id: "Place", title: "Where should it be?", lead: "Borough and subway narrow the map. Everything else is saved for ranking." },
+  { title: "Question 1", lead: "What are you looking to lease?", category: "Lease type" },
+  { title: "Question 2", lead: "What does the space need to be?", category: "Category" },
+  { title: "Question 3", lead: "Budget and timing for this search.", category: "Budget" },
+  { title: "Question 4", lead: "Where should LeaseLens look first?", category: "Place" },
 ];
 
 function toggle<T extends string>(list: T[], value: T): T[] {
@@ -70,46 +70,57 @@ export function Onboarding({
   const neighborhoods = neighborhoodsFor(draft.boroughs);
   const commercial = wantsCommercial(draft);
   const home = wantsHome(draft);
-
   const current = STEPS[step];
 
   return (
     <div className="onboard">
       <article className="onboard-sheet">
         <header className="onboard-head">
-          <div className="onboard-progress" aria-hidden="true">
-            {STEPS.map((item, index) => (
-              <span key={item.id} className={index <= step ? "is-on" : ""} />
-            ))}
-          </div>
-          <p className="onboard-step">{step + 1} / {STEPS.length} · {current.id}</p>
           <h2>{current.title}</h2>
           <p className="onboard-lead">{current.lead}</p>
         </header>
 
         <div className="onboard-body">
           {step === 0 && (
-            <div className="onboard-grid onboard-grid-wide">
-              {LEASE_KINDS.map((kind) => (
-                <button key={kind.id} type="button" className={draft.leaseKind === kind.id ? "onboard-option is-on" : "onboard-option"} onClick={() => patch({ leaseKind: kind.id, budget: null, homeBudget: null })}>
-                  <b>{kind.label}</b>
-                  <span>{kind.hint}</span>
-                </button>
-              ))}
-            </div>
+            <section>
+              <p className="onboard-label">{current.category}</p>
+              <div className="onboard-pills">
+                {LEASE_KINDS.map((kind) => (
+                  <button
+                    key={kind.id}
+                    type="button"
+                    className={draft.leaseKind === kind.id ? "onboard-pill is-on" : "onboard-pill"}
+                    onClick={() => patch({ leaseKind: kind.id, budget: null, homeBudget: null })}
+                  >
+                    {kind.label}
+                  </button>
+                ))}
+              </div>
+              <p className="onboard-hint">
+                {LEASE_KINDS.find((k) => k.id === draft.leaseKind)?.hint ?? "Pick one to continue."}
+              </p>
+            </section>
           )}
 
           {step === 1 && (
             <div className="onboard-sections">
               {commercial && (
                 <section>
-                  <p className="onboard-label">Business use</p>
-                  <div className="onboard-grid">
+                  <p className="onboard-label">Category</p>
+                  <div className="onboard-pills">
                     {COMMERCIAL_USES.map((use) => (
-                      <button key={use.id} type="button" className={draft.use === use.id ? "onboard-option is-on" : "onboard-option"} onClick={() => patch({ use: use.id })}>{use.label}</button>
+                      <button
+                        key={use.id}
+                        type="button"
+                        className={draft.use === use.id ? "onboard-pill is-on" : "onboard-pill"}
+                        onClick={() => patch({ use: use.id })}
+                      >
+                        {use.label}
+                      </button>
                     ))}
                   </div>
                   <input
+                    className="onboard-input"
                     aria-label="What you are opening"
                     placeholder="Optional: what you are opening"
                     value={draft.concept}
@@ -121,19 +132,40 @@ export function Onboarding({
               {home && (
                 <section>
                   <p className="onboard-label">Home</p>
-                  <div className="onboard-grid">
+                  <div className="onboard-pills">
                     {BEDS.map((beds) => (
-                      <button key={beds.id} type="button" className={draft.beds === beds.id ? "onboard-option is-on" : "onboard-option"} onClick={() => patch({ beds: beds.id })}>{beds.label}</button>
+                      <button
+                        key={beds.id}
+                        type="button"
+                        className={draft.beds === beds.id ? "onboard-pill is-on" : "onboard-pill"}
+                        onClick={() => patch({ beds: beds.id })}
+                      >
+                        {beds.label}
+                      </button>
                     ))}
                   </div>
-                  <div className="onboard-grid">
+                  <div className="onboard-pills">
                     {HOUSEHOLDS.map((item) => (
-                      <button key={item.id} type="button" className={draft.household === item.id ? "onboard-option is-on" : "onboard-option"} onClick={() => patch({ household: item.id })}>{item.label}</button>
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={draft.household === item.id ? "onboard-pill is-on" : "onboard-pill"}
+                        onClick={() => patch({ household: item.id })}
+                      >
+                        {item.label}
+                      </button>
                     ))}
                   </div>
-                  <div className="onboard-grid">
+                  <div className="onboard-pills">
                     {PETS.map((item) => (
-                      <button key={item.id} type="button" className={draft.pets === item.id ? "onboard-option is-on" : "onboard-option"} onClick={() => patch({ pets: item.id })}>{item.label}</button>
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={draft.pets === item.id ? "onboard-pill is-on" : "onboard-pill"}
+                        onClick={() => patch({ pets: item.id })}
+                      >
+                        {item.label}
+                      </button>
                     ))}
                   </div>
                 </section>
@@ -146,9 +178,16 @@ export function Onboarding({
               {commercial && (
                 <section>
                   <p className="onboard-label">Maximum business rent</p>
-                  <div className="onboard-grid">
+                  <div className="onboard-pills">
                     {COMMERCIAL_BUDGETS.map((band) => (
-                      <button key={band.id} type="button" className={draft.budget === band.id ? "onboard-option is-on" : "onboard-option"} onClick={() => patch({ budget: band.id })}>{band.label}</button>
+                      <button
+                        key={band.id}
+                        type="button"
+                        className={draft.budget === band.id ? "onboard-pill is-on" : "onboard-pill"}
+                        onClick={() => patch({ budget: band.id })}
+                      >
+                        {band.label}
+                      </button>
                     ))}
                   </div>
                 </section>
@@ -156,9 +195,16 @@ export function Onboarding({
               {commercial && (
                 <section>
                   <p className="onboard-label">Size</p>
-                  <div className="onboard-grid">
+                  <div className="onboard-pills">
                     {SIZE_BANDS.map((band) => (
-                      <button key={band.id} type="button" className={draft.size === band.id ? "onboard-option is-on" : "onboard-option"} onClick={() => patch({ size: band.id })}>{band.label}</button>
+                      <button
+                        key={band.id}
+                        type="button"
+                        className={draft.size === band.id ? "onboard-pill is-on" : "onboard-pill"}
+                        onClick={() => patch({ size: band.id })}
+                      >
+                        {band.label}
+                      </button>
                     ))}
                   </div>
                 </section>
@@ -166,15 +212,17 @@ export function Onboarding({
               {home && (
                 <section>
                   <p className="onboard-label">Maximum home rent</p>
-                  <div className="onboard-grid">
+                  <div className="onboard-pills">
                     {HOME_BUDGETS.map((band) => {
                       const selected = draft.leaseKind === "both" ? draft.homeBudget === band.id : draft.budget === band.id;
                       return (
                         <button
                           key={band.id}
                           type="button"
-                          className={selected ? "onboard-option is-on" : "onboard-option"}
-                          onClick={() => patch(draft.leaseKind === "both" ? { homeBudget: band.id as BudgetBand } : { budget: band.id })}
+                          className={selected ? "onboard-pill is-on" : "onboard-pill"}
+                          onClick={() =>
+                            patch(draft.leaseKind === "both" ? { homeBudget: band.id as BudgetBand } : { budget: band.id })
+                          }
                         >
                           {band.label}
                         </button>
@@ -185,9 +233,16 @@ export function Onboarding({
               )}
               <section>
                 <p className="onboard-label">When you need it</p>
-                <div className="onboard-grid">
+                <div className="onboard-pills">
                   {TIMINGS.map((timing) => (
-                    <button key={timing.id} type="button" className={draft.timing === timing.id ? "onboard-option is-on" : "onboard-option"} onClick={() => patch({ timing: timing.id })}>{timing.label}</button>
+                    <button
+                      key={timing.id}
+                      type="button"
+                      className={draft.timing === timing.id ? "onboard-pill is-on" : "onboard-pill"}
+                      onClick={() => patch({ timing: timing.id })}
+                    >
+                      {timing.label}
+                    </button>
                   ))}
                 </div>
               </section>
@@ -198,12 +253,12 @@ export function Onboarding({
             <div className="onboard-sections">
               <section>
                 <p className="onboard-label">Boroughs</p>
-                <div className="onboard-grid">
+                <div className="onboard-pills">
                   {BOROUGHS.map((borough) => (
                     <button
                       key={borough}
                       type="button"
-                      className={draft.boroughs.includes(borough) ? "onboard-option is-on" : "onboard-option"}
+                      className={draft.boroughs.includes(borough) ? "onboard-pill is-on" : "onboard-pill"}
                       onClick={() => {
                         const boroughs = toggle(draft.boroughs, borough);
                         const allowed = new Set<string>(neighborhoodsFor(boroughs));
@@ -219,27 +274,57 @@ export function Onboarding({
                 </div>
               </section>
               <section>
-                <p className="onboard-label">Neighborhoods, if you already know</p>
-                <div className="onboard-grid">
+                <p className="onboard-label">Neighborhoods</p>
+                <div className="onboard-pills">
                   {neighborhoods.map((name) => (
-                    <button key={name} type="button" className={draft.neighborhoods.includes(name) ? "onboard-option is-on" : "onboard-option"} onClick={() => patch({ neighborhoods: toggle(draft.neighborhoods, name) })}>{name}</button>
+                    <button
+                      key={name}
+                      type="button"
+                      className={draft.neighborhoods.includes(name) ? "onboard-pill is-on" : "onboard-pill"}
+                      onClick={() => patch({ neighborhoods: toggle(draft.neighborhoods, name) })}
+                    >
+                      {name}
+                    </button>
                   ))}
                 </div>
-                {neighborhoods.length === 0 && <p className="onboard-lead">Choose a borough in this sample, or continue with the borough only.</p>}
+                {neighborhoods.length === 0 && (
+                  <p className="onboard-hint">Choose a borough first, or continue with borough only.</p>
+                )}
               </section>
               <section>
                 <p className="onboard-label">Subway</p>
-                <div className="onboard-grid onboard-grid-pair">
-                  <button type="button" className={draft.nearSubway === true ? "onboard-option is-on" : "onboard-option"} onClick={() => patch({ nearSubway: true })}>Near a subway</button>
-                  <button type="button" className={draft.nearSubway === false ? "onboard-option is-on" : "onboard-option"} onClick={() => patch({ nearSubway: false })}>No preference</button>
+                <div className="onboard-pills">
+                  <button
+                    type="button"
+                    className={draft.nearSubway === true ? "onboard-pill is-on" : "onboard-pill"}
+                    onClick={() => patch({ nearSubway: true })}
+                  >
+                    Near a subway
+                  </button>
+                  <button
+                    type="button"
+                    className={draft.nearSubway === false ? "onboard-pill is-on" : "onboard-pill"}
+                    onClick={() => patch({ nearSubway: false })}
+                  >
+                    No preference
+                  </button>
                 </div>
               </section>
               <section>
-                <p className="onboard-label">Must-haves to save</p>
-                <div className="onboard-grid">
-                  {(commercial ? COMMERCIAL_MUSTS : []).concat(home ? HOME_MUSTS : []).map((item) => (
-                    <button key={item.id} type="button" className={draft.mustHaves.includes(item.id) ? "onboard-option is-on" : "onboard-option"} onClick={() => patch({ mustHaves: toggle(draft.mustHaves, item.id) })}>{item.label}</button>
-                  ))}
+                <p className="onboard-label">Must-haves</p>
+                <div className="onboard-pills">
+                  {(commercial ? COMMERCIAL_MUSTS : [])
+                    .concat(home ? HOME_MUSTS : [])
+                    .map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={draft.mustHaves.includes(item.id) ? "onboard-pill is-on" : "onboard-pill"}
+                        onClick={() => patch({ mustHaves: toggle(draft.mustHaves, item.id) })}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
                 </div>
               </section>
             </div>
@@ -249,13 +334,31 @@ export function Onboarding({
         {error && <p className="onboard-error">{error}</p>}
         <footer className="onboard-foot">
           {step > 0 ? (
-            <button type="button" className="ghost" onClick={() => { setStep(step - 1); setError(""); }}>Back</button>
-          ) : onClose ? (
-            <button type="button" className="ghost" onClick={onClose}>Close</button>
+            <button
+              type="button"
+              className="onboard-secondary"
+              onClick={() => {
+                setStep(step - 1);
+                setError("");
+              }}
+            >
+              Back
+            </button>
           ) : (
-            <button type="button" className="ghost" onClick={onSkip}>Skip for now</button>
+            <button
+              type="button"
+              className="onboard-secondary"
+              onClick={() => {
+                if (onSkip) onSkip();
+                else onClose?.();
+              }}
+            >
+              Skip for now
+            </button>
           )}
-          <button type="button" className="primary" onClick={next}>{step === STEPS.length - 1 ? "See matches" : "Continue"}</button>
+          <button type="button" className="onboard-primary" onClick={next}>
+            Continue
+          </button>
         </footer>
       </article>
     </div>
