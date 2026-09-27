@@ -22,6 +22,58 @@ const FLAG_SHORT: Record<string, string> = {
 const PREVIEW_FLAGS = 3;
 const PREVIEW_EVENTS = 2;
 
+function StreetPhoto({ id }: { id: string }) {
+  const [state, setState] = useState<"loading" | "ready" | "none" | "unconfigured">("loading");
+  const [copyright, setCopyright] = useState("");
+  const [date, setDate] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancel = false;
+    setState("loading");
+    fetch(`/api/streetview?id=${encodeURIComponent(id)}`)
+      .then((response) => response.json())
+      .then((payload: { available?: boolean; reason?: string; copyright?: string; date?: string | null }) => {
+        if (cancel) return;
+        if (payload.available) {
+          setCopyright(payload.copyright || "© Google");
+          setDate(payload.date ?? null);
+          setState("ready");
+          return;
+        }
+        setState(payload.reason === "unconfigured" ? "unconfigured" : "none");
+      })
+      .catch(() => {
+        if (!cancel) setState("none");
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [id]);
+
+  return (
+    <figure className="facade">
+      {state === "ready" ? (
+        <img src={`/api/streetview/image?id=${encodeURIComponent(id)}`} alt="Street View of this address" />
+      ) : (
+        <div className="facade-empty">
+          {state === "loading"
+            ? "Looking up Street View…"
+            : state === "unconfigured"
+              ? "Add GOOGLE_MAPS_API_KEY to show a Street View photo of this address."
+              : "No Street View photo is on file for this address."}
+        </div>
+      )}
+      {state === "ready" && (
+        <figcaption>
+          {copyright}
+          {date ? ` · panorama ${date}` : ""}
+          {" · sidewalk view, not an interior"}
+        </figcaption>
+      )}
+    </figure>
+  );
+}
+
 export function DetailPanel({
   detail,
   explanation,
@@ -104,6 +156,7 @@ export function DetailPanel({
         <p className="sub">
           {detail.neighborhood} · {detail.borough}
         </p>
+        <StreetPhoto id={detail.id} />
       </header>
 
       <ScorePair turnover={turnover} fit={detail.fitScore} fitCategory={fitName} />
