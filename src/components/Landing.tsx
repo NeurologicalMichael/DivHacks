@@ -1,37 +1,48 @@
 "use client";
 
-export type Persona = "entrepreneur" | "shop_owner" | "landlord";
+import { BrandMark } from "./BrandMark";
 
-const PERSONAS: { id: Persona; title: string; hint: string }[] = [
-  { id: "entrepreneur", title: "Entrepreneur", hint: "Find a space early" },
-  { id: "shop_owner", title: "Shop Owner", hint: "Watch my lease risk" },
-  { id: "landlord", title: "Landlord", hint: "Signal privately" },
-];
+export type Persona = "entrepreneur" | "shop_owner" | "landlord";
 
 export function Landing({ onChoose }: { onChoose: (persona: Persona) => void }) {
   return (
     <div className="landing">
       <header className="landing-nav">
-        <strong className="logo">LeaseLens</strong>
-        <button type="button" className="nav-ghost" aria-label="Account" />
+        <BrandMark />
       </header>
       <div className="landing-body">
         <div className="landing-copy">
-          <h1>Find the storefront before the listing does</h1>
+          <h1>
+            Find the storefront
+            <br />
+            before the listing does
+          </h1>
           <p>
-            LeaseLens reads NYC public records to spot commercial spaces that are vacant or likely to open up, and
-            shows the evidence behind every score.
+            LeaseLens reads NYC public records to find storefronts that are empty or likely to open up soon, and
+            shows you the evidence behind every score.
           </p>
-          <div className="persona-row">
-            {PERSONAS.map((persona) => (
-              <button key={persona.id} type="button" className="persona-card" onClick={() => onChoose(persona.id)}>
-                <b>{persona.title}</b>
-                <span>{persona.hint}</span>
-              </button>
-            ))}
-          </div>
+          <button type="button" className="landing-cta" onClick={() => onChoose("entrepreneur")}>
+            Find Storefronts
+          </button>
         </div>
-        <div className="landing-visual" aria-hidden="true" />
+        <div className="landing-stage" aria-hidden="true">
+          <img className="hero-map" src="/homepage1.png" alt="" />
+          <p className="hero-chat hero-chat-ask" style={{ animationDelay: "0.2s" }}>
+            I want to open a store, but it&apos;s so confusing
+            <br />
+            to find a storefront that fits
+          </p>
+          <img className="hero-card hero-gauges" style={{ animationDelay: "0.35s" }} src="/homepage6.png" alt="" />
+          <img className="hero-card hero-address" style={{ animationDelay: "0.5s" }} src="/homepage4.png" alt="" />
+          <img className="hero-card hero-timeline" style={{ animationDelay: "0.7s" }} src="/homepage2.png" alt="" />
+          <img className="hero-card hero-score" style={{ animationDelay: "0.85s" }} src="/homepage3.png" alt="" />
+          <img className="hero-card hero-photo" style={{ animationDelay: "1.05s" }} src="/homepage5.png" alt="" />
+          <p className="hero-chat hero-chat-why" style={{ animationDelay: "1.25s" }}>
+            Why are there so many empty
+            <br />
+            stores in New York?
+          </p>
+        </div>
       </div>
     </div>
   );

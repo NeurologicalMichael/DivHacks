@@ -275,3 +275,13 @@ export function turnoverLabel(score: number) {
 export const STORE_SCORE_LABEL = "Store Score";
 export const STORE_SCORE_HELP =
   "How strongly public records suggest this storefront may turn over or open soon — vacancy filings, lease dates, licenses, sales, and permits, weighted by your signal settings.";
+export const FIT_HELP =
+  "How well this filing matches the use you asked for. Points come from the filed activity, subway distance, and PLUTO building class, retail area, and zoning when those fields matched. Missing fields add nothing.";
+export const SCORE_BREAKDOWN_HELP =
+  "The public-record signals that can add to the Store Score, and whether each one is on file for this storefront. A signal adds points only when the record is present.";
+export const WHY_FLAGGED_HELP =
+  "The signals already on file that added points for this address. This is why it was flagged. It is not a prediction that the space will be listed.";
+export const TIMELINE_HELP =
+  "Dated events on this building from city filings, such as sales, lease dates, permits, and licenses. Area history is the neighborhood, not this storefront alone.";
+export const AREA_HELP =
+  "Nearby transit and businesses from public location files, plus the pieces that made up the fit score. These describe the area and the filing, not a confirmed interior.";

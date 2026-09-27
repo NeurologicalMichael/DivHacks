@@ -3,7 +3,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { categoryLabel } from "@/lib/catalog";
 import { formatDate, formatMeters, formatMoney, titleAddress } from "@/lib/format";
-import { METRIC_DEFS, buildMetricStates, enabledTotal, type WeightMap } from "@/lib/signals";
+import {
+  AREA_HELP,
+  METRIC_DEFS,
+  SCORE_BREAKDOWN_HELP,
+  TIMELINE_HELP,
+  WHY_FLAGGED_HELP,
+  buildMetricStates,
+  enabledTotal,
+  type WeightMap,
+} from "@/lib/signals";
+import { HoverTip } from "./HoverTip";
 import type { StorefrontDetail } from "@/lib/types";
 import { MetricsDonut, ScorePair } from "./MetricsDonut";
 
@@ -188,7 +198,9 @@ export function DetailPanel({
       ) : (
         <div className="panel-card">
           <header className="section-head">
-            <h3>Score breakdown</h3>
+            <h3>
+              <HoverTip tip={SCORE_BREAKDOWN_HELP}>Score breakdown</HoverTip>
+            </h3>
             <button type="button" className="text-btn" onClick={() => setMixOpen(false)}>
               Hide ▴
             </button>
@@ -202,7 +214,9 @@ export function DetailPanel({
 
       <section className="panel-card">
         <header className="section-head">
-          <h3>Why it was flagged</h3>
+          <h3>
+            <HoverTip tip={WHY_FLAGGED_HELP}>Why it was flagged</HoverTip>
+          </h3>
           <span>{flagged.length} signal{flagged.length === 1 ? "" : "s"}</span>
         </header>
         {flagged.length === 0 && <p className="empty">No Store Score signals for this storefront.</p>}
@@ -223,7 +237,9 @@ export function DetailPanel({
 
       <section className="panel-card">
         <header className="section-head">
-          <h3>Timeline</h3>
+          <h3>
+            <HoverTip tip={TIMELINE_HELP}>Timeline</HoverTip>
+          </h3>
           <span>Since {oldestYear(buildingEvents, areaEvents)}</span>
         </header>
         <p className="section-sub">This building</p>
@@ -292,7 +308,9 @@ export function DetailPanel({
 
       <section className="panel-card">
         <header className="section-head">
-          <h3>More about this area</h3>
+          <h3>
+            <HoverTip tip={AREA_HELP}>More about this area</HoverTip>
+          </h3>
           <span>Transit &amp; businesses</span>
         </header>
         <button type="button" className="dropdown-btn" onClick={() => setDetailsOpen((v) => !v)}>

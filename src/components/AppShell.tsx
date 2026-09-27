@@ -25,6 +25,7 @@ import {
   weightsAreDefault,
 } from "@/lib/signals";
 import type { Pin } from "./MapCanvas";
+import { BrandMark } from "./BrandMark";
 import { CustomizeSignalsModal } from "./CustomizeSignalsModal";
 import { DeskChat } from "./DeskChat";
 import { DetailPanel } from "./DetailPanel";
@@ -37,9 +38,38 @@ import type { Watch } from "./OwnerPanel";
 import { StreetThumb } from "./StreetThumb";
 
 const EXAMPLE = "Show me restaurant-ready storefronts in Brooklyn that may become available in the next 6 months.";
+const VIEW_KEY = "leaselens-view";
 
 type Mode = "explore" | "gap" | "owner" | "landlord";
 type SortKey = "turnover" | "fit" | "name";
+
+type SavedView = {
+  persona: Persona;
+  query: string;
+  mode: Mode;
+  selectedId: string | null;
+  sortKey: SortKey;
+};
+
+function readView(): SavedView | null {
+  try {
+    const raw = window.sessionStorage.getItem(VIEW_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<SavedView>;
+    if (parsed.persona !== "entrepreneur" && parsed.persona !== "shop_owner" && parsed.persona !== "landlord") return null;
+    const mode: Mode = parsed.mode === "gap" || parsed.mode === "owner" || parsed.mode === "landlord" ? parsed.mode : "explore";
+    const sortKey: SortKey = parsed.sortKey === "fit" || parsed.sortKey === "name" ? parsed.sortKey : "turnover";
+    return {
+      persona: parsed.persona,
+      query: typeof parsed.query === "string" ? parsed.query : "",
+      mode,
+      selectedId: typeof parsed.selectedId === "string" ? parsed.selectedId : null,
+      sortKey,
+    };
+  } catch {
+    return null;
+  }
+}
 
 function sessionId() {
   const key = "leaselens-session";
@@ -127,8 +157,10 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
       setResults(payload.results);
       setFilters(payload.filters);
       setUsingProfile(Boolean(options?.fromProfile));
+      return (payload.filters?.category as string | null) ?? null;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Search failed");
+      return null;
     } finally {
       setLoading(false);
     }
@@ -190,22 +222,49 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
       }
       if (cancelled) return;
       setSignalWeights(loadWeights());
-      if (saved) {
-        setProfile(saved);
-        setPersona("entrepreneur");
-        const sentence = profileSentence(saved);
-        setQuery(sentence);
-        await search(sentence, { filters: profileToFilters(saved), fromProfile: true });
-      } else if (window.localStorage.getItem(PROFILE_SKIP_KEY) === "1") {
-        setPersona("entrepreneur");
-        await search(EXAMPLE);
+      if (saved) setProfile(saved);
+      const view = readView();
+      if (!view) {
+        if (saved) setQuery(profileSentence(saved));
+        setBooted(true);
+        return;
       }
+      const sentence = view.query || (saved ? profileSentence(saved) : EXAMPLE);
+      setPersona(view.persona);
+      setMode(view.mode);
+      setSortKey(view.sortKey);
+      setQuery(sentence);
+      if (view.selectedId) setSelectedId(view.selectedId);
       setBooted(true);
+      const category = await search(sentence, { keepSelection: true });
+      if (cancelled) return;
+      if (view.persona === "shop_owner") {
+        const response = await fetch(`/api/owner?sessionId=${sessionId()}`);
+        const payload = await response.json();
+        if (!cancelled) {
+          setWatches(payload.watches ?? []);
+          setWatchNote(payload.note ?? "");
+        }
+      }
+      if (!view.selectedId) return;
+      const response = await fetch(`/api/storefronts/${encodeURIComponent(view.selectedId)}?category=${encodeURIComponent(category ?? "storefront")}`);
+      const payload = await response.json();
+      if (!cancelled && response.ok) setDetail(payload);
     })();
     return () => {
       cancelled = true;
     };
   }, [search]);
+
+  useEffect(() => {
+    if (!booted) return;
+    if (!persona) {
+      window.sessionStorage.removeItem(VIEW_KEY);
+      return;
+    }
+    const view: SavedView = { persona, query, mode, selectedId, sortKey };
+    window.sessionStorage.setItem(VIEW_KEY, JSON.stringify(view));
+  }, [booted, persona, query, mode, selectedId, sortKey]);
 
   function applyProfilePrefs(next: RenterProfile) {
     saveProfile(next);
@@ -221,7 +280,13 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
   function choosePersona(next: Persona) {
     setPersona(next);
     if (!results.length) {
-      search(EXAMPLE).catch((caught) => setError(caught.message));
+      if (next === "entrepreneur" && profile) {
+        const sentence = profileSentence(profile);
+        setQuery(sentence);
+        search(sentence, { filters: profileToFilters(profile), fromProfile: true }).catch((caught) => setError(caught.message));
+      } else {
+        search(EXAMPLE).catch((caught) => setError(caught.message));
+      }
     }
     if (next === "shop_owner") {
       setMode("owner");
@@ -298,7 +363,11 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
   }, [filtered, metricFilters.length, selectedId]);
 
   if (!booted) {
-    return <div className="boot">Loading LeaseLens…</div>;
+    return (
+      <div className="boot">
+        <BrandMark />
+      </div>
+    );
   }
 
   if (!persona) {
@@ -311,9 +380,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
     <main className="app">
       <header className="topbar">
         <div className="topbar-left">
-          <button type="button" className="logo" onClick={() => setPersona(null)}>
-            LeaseLens
-          </button>
+          <BrandMark onClick={() => setPersona(null)} />
         </div>
         <form
           className="top-search"

@@ -3,6 +3,7 @@
 import { useId } from "react";
 import {
   METRIC_DEFS,
+  FIT_HELP,
   STORE_SCORE_HELP,
   STORE_SCORE_LABEL,
   enabledTotal,
@@ -12,6 +13,7 @@ import {
   type MetricState,
 } from "@/lib/signals";
 import { TURNOVER_GRADIENT } from "@/lib/turnoverColor";
+import { HoverTip } from "./HoverTip";
 
 const EXTRA_COLORS = ["#64748B", "#0EA5E9", "#A855F7", "#F43F5E", "#14B8A6"];
 
@@ -156,14 +158,14 @@ export function ScorePair({
     <div className="score-pair-row">
       <div className="score-card">
         <p className="score-card-kicker">
-          <span className="label-tip" title={STORE_SCORE_HELP} tabIndex={0}>
-            {STORE_SCORE_LABEL}
-          </span>
+          <HoverTip tip={STORE_SCORE_HELP}>{STORE_SCORE_LABEL}</HoverTip>
         </p>
         <SemiGauge value={turnover} label={turnoverLabel(turnover)} />
       </div>
       <div className="score-card">
-        <p className="score-card-kicker">Fit for a {fitCategory.toLowerCase()}</p>
+        <p className="score-card-kicker">
+          <HoverTip tip={FIT_HELP}>Fit for a {fitCategory.toLowerCase()}</HoverTip>
+        </p>
         <SemiGauge value={fit} label={fitLabel(fit)} />
       </div>
     </div>

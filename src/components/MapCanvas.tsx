@@ -4,6 +4,7 @@ import L from "leaflet";
 import { useEffect, useRef } from "react";
 import "leaflet/dist/leaflet.css";
 import { STORE_SCORE_HELP, STORE_SCORE_LABEL } from "@/lib/signals";
+import { HoverTip } from "./HoverTip";
 import { turnoverScaleColor } from "@/lib/turnoverColor";
 
 export type Pin = {
@@ -181,8 +182,8 @@ export default function MapCanvas({
     <div className="map-shell">
       <div ref={container} className="map-root" role="application" aria-label="Storefront map" />
       <aside className="map-legend" aria-label={`${STORE_SCORE_LABEL} scale`}>
-        <span className="map-legend-label label-tip" title={STORE_SCORE_HELP} tabIndex={0}>
-          {STORE_SCORE_LABEL}
+        <span className="map-legend-label">
+          <HoverTip tip={STORE_SCORE_HELP} above>{STORE_SCORE_LABEL}</HoverTip>
         </span>
         <span className="map-legend-bar" />
         <span className="map-legend-ends">
