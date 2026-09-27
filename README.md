@@ -95,3 +95,12 @@ The Lease desk is the SpaceXAI agent. It stays closed until there is an account:
 2. Add the business name; Google accounts are stored in `user_accounts`.
 
 With `XAI_API_KEY` set, the desk calls SpaceXAI, shows each filing lookup as it happens, and drafts a note **only from those filings**. Approving a note stores it. Nothing is emailed — no mail service is connected. If the key is missing or SpaceXAI rejects the call, the same desk answers from the filing search.
+
+## Custom domain
+
+GitHub Pages only serves finished files. It cannot run this Next.js server or Postgres, and there is no `index.html` in the repo root for it to open. A push to `main` or `cursor/leaselens-nyc-cfc8` builds the site from `data/snapshot.json` and publishes that build. Search, the map, and the written summary work from those filings. Gemini, Mapillary, the lease desk, and new landlord opt-ins stay on a machine running `npm run dev`.
+
+1. On GitHub, open **Settings → Pages**.
+2. Under **Build and deployment**, set **Source** to **GitHub Actions**.
+3. After the “Publish site” action is green, open **Settings → Pages** again and add the custom domain.
+4. At the domain registrar, point the domain at GitHub using the DNS records Pages shows. GitHub then serves the site at the domain root.

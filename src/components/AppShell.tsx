@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { apiFetch } from "@/lib/apiFetch";
 import type { ComponentType } from "react";
 import { categoryLabel } from "@/lib/catalog";
 import { titleAddress } from "@/lib/format";
@@ -142,7 +143,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
       setExplanation(null);
     }
     try {
-      const response = await fetch("/api/search", {
+      const response = await apiFetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -176,7 +177,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
     } else if (persona !== "shop_owner" && persona !== "landlord") {
       setMode("explore");
     }
-    const response = await fetch(`/api/storefronts/${encodeURIComponent(id)}?category=${encodeURIComponent(category ?? "storefront")}`);
+    const response = await apiFetch(`/api/storefronts/${encodeURIComponent(id)}?category=${encodeURIComponent(category ?? "storefront")}`);
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "Could not load storefront");
     setDetail(payload);
@@ -185,7 +186,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
   const loadGap = useCallback(async (neighborhood: string, propertyId?: string | null) => {
     const params = new URLSearchParams({ neighborhood });
     if (propertyId) params.set("propertyId", propertyId);
-    const response = await fetch(`/api/gap?${params.toString()}`);
+    const response = await apiFetch(`/api/gap?${params.toString()}`);
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "Gap analysis failed");
     setGaps(payload.gaps);
@@ -197,14 +198,14 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
   }, []);
 
   const loadWatches = useCallback(async () => {
-    const response = await fetch(`/api/owner?sessionId=${sessionId()}`);
+    const response = await apiFetch(`/api/owner?sessionId=${sessionId()}`);
     const payload = await response.json();
     setWatches(payload.watches ?? []);
     setWatchNote(payload.note ?? "");
   }, []);
 
   useEffect(() => {
-    fetch("/api/gap").then((r) => r.json()).then((payload) => {
+    apiFetch("/api/gap").then((r) => r.json()).then((payload) => {
       setGapNeighborhoods(payload.neighborhoods ?? []);
     }).catch(() => undefined);
 
@@ -213,7 +214,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
       const id = sessionId();
       let saved = loadProfile();
       try {
-        const response = await fetch(`/api/profile?sessionId=${encodeURIComponent(id)}`);
+        const response = await apiFetch(`/api/profile?sessionId=${encodeURIComponent(id)}`);
         const payload = await response.json();
         if (payload.profile) {
           saved = payload.profile;
@@ -241,7 +242,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
       const category = await search(sentence, { keepSelection: true });
       if (cancelled) return;
       if (view.persona === "shop_owner") {
-        const response = await fetch(`/api/owner?sessionId=${sessionId()}`);
+        const response = await apiFetch(`/api/owner?sessionId=${sessionId()}`);
         const payload = await response.json();
         if (!cancelled) {
           setWatches(payload.watches ?? []);
@@ -249,7 +250,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
         }
       }
       if (!view.selectedId) return;
-      const response = await fetch(`/api/storefronts/${encodeURIComponent(view.selectedId)}?category=${encodeURIComponent(category ?? "storefront")}`);
+      const response = await apiFetch(`/api/storefronts/${encodeURIComponent(view.selectedId)}?category=${encodeURIComponent(category ?? "storefront")}`);
       const payload = await response.json();
       if (!cancelled && response.ok) setDetail(payload);
     })();
@@ -272,7 +273,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
     saveProfile(next);
     window.localStorage.removeItem(PROFILE_SKIP_KEY);
     setProfile(next);
-    void fetch("/api/profile", {
+    void apiFetch("/api/profile", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sessionId: sessionId(), profile: next }),
@@ -479,7 +480,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
                     type="button"
                     className="text-btn"
                     onClick={async () => {
-                      await fetch(`/api/owner?sessionId=${sessionId()}&propertyId=${encodeURIComponent(watch.propertyId)}`, { method: "DELETE" });
+                      await apiFetch(`/api/owner?sessionId=${sessionId()}&propertyId=${encodeURIComponent(watch.propertyId)}`, { method: "DELETE" });
                       await loadWatches();
                     }}
                   >
@@ -554,7 +555,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
                 options={scoredResults}
                 selectedId={selectedId}
                 onSubmit={async (input) => {
-                  const response = await fetch("/api/landlord", {
+                  const response = await apiFetch("/api/landlord", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(input),
@@ -591,7 +592,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
                 onExplain={async () => {
                   setExplaining(true);
                   try {
-                    const response = await fetch("/api/explain", {
+                    const response = await apiFetch("/api/explain", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ propertyId: detail.id, category: filters?.category }),

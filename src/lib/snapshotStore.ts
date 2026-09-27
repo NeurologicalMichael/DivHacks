@@ -1,5 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
 import { availabilityFor } from "./availability";
 import { matchesPlaceFilter } from "./catalog";
 import { toIsoDate } from "./format";
@@ -38,16 +36,22 @@ type Snapshot = {
   sales_trends: Prop[];
 };
 
-let cache: Snapshot | null = null;
-let cacheMtime = 0;
+let memory: Snapshot | null = null;
+let reader: (() => Snapshot) | null = null;
+
+/** Browser publish loads the snapshot JSON itself. The server reader is registered separately. */
+export function setSnapshotData(data: Snapshot) {
+  memory = data;
+}
+
+export function setSnapshotReader(next: () => Snapshot) {
+  reader = next;
+}
 
 function loadSnapshot(): Snapshot {
-  const file = path.join(process.cwd(), "data", "snapshot.json");
-  const mtime = fs.statSync(file).mtimeMs;
-  if (cache && cacheMtime === mtime) return cache;
-  cache = JSON.parse(fs.readFileSync(file, "utf8")) as Snapshot;
-  cacheMtime = mtime;
-  return cache;
+  if (memory) return memory;
+  if (!reader) throw new Error("Snapshot is not loaded");
+  return reader();
 }
 
 function num(value: unknown) {

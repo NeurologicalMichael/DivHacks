@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { apiFetch } from "@/lib/apiFetch";
 
 export function StreetThumb({ id }: { id: string }) {
   const slot = useRef<HTMLSpanElement>(null);
@@ -17,7 +18,7 @@ export function StreetThumb({ id }: { id: string }) {
       (entries) => {
         if (!entries.some((entry) => entry.isIntersecting)) return;
         observer.disconnect();
-        fetch(`/api/streetview?id=${encodeURIComponent(id)}`)
+        apiFetch(`/api/streetview?id=${encodeURIComponent(id)}`)
           .then((response) => response.json())
           .then((payload: { available?: boolean; copyright?: string }) => {
             if (cancel || !payload.available) return;

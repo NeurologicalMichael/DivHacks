@@ -1,3 +1,4 @@
+import "./snapshotDisk";
 import { availabilityFor } from "./availability";
 import { query } from "./db";
 import { normalizeProfile, profileBrief, type RenterProfile } from "./profile";
