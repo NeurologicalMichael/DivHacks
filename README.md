@@ -1,49 +1,57 @@
 # LeaseLens NYC
 
-Find the storefront before the listing does.
-
-LeaseLens is a map-first search for entrepreneurs looking at New York City storefronts. It combines public city filings into a turnover index and a business-fit index, and it shows the evidence under every number.
+Map-first search for NYC storefronts that may open before a listing appears. Public city filings become a **Store Score** (turnover evidence) and a **Fit** score, with every number tied to a named source.
 
 ## Run
 
-PostgreSQL 16 with PostGIS and TimescaleDB (Tiger Data's database engine) needs to be reachable. The Docker container `leaselens-db` publishes it on **`localhost:5433`** (host `5432` is often already taken by another Postgres).
+Needs PostgreSQL 16 + PostGIS + TimescaleDB. The usual Docker container `leaselens-db` is on **`localhost:5433`** (host `5432` is often taken).
 
 ```bash
 npm install
-# ensure the container is up, e.g. docker start leaselens-db
+docker start leaselens-db   # if needed
 npm run db:setup
 npm run dev
 ```
 
-The database URL defaults to `postgres://leaselens:leaselens@localhost:5433/leaselens`. Override it with `DATABASE_URL`.
+Default DB: `postgres://leaselens:leaselens@localhost:5433/leaselens` (`DATABASE_URL` overrides).
 
-Optional: set `GEMINI_API_KEY` to let Gemini turn a sentence into filters and summarize records that were already retrieved. Without a key, a local parser handles the same searches and the on-screen explanations are templates built only from those records.
+Copy `.env.example` → `.env` / `.env.local`. Restart `npm run dev` after changing any `NEXT_PUBLIC_*` key.
 
-Optional: set `MAPILLARY_TOKEN` to a free client token from the [Mapillary developer dashboard](https://www.mapillary.com/dashboard/developers). No credit card. When a sidewalk photo exists within 50 meters of the storefront, it appears in the list thumbnail and on the detail panel, with CC BY-SA credit on the detail. Without a token, or when Mapillary has no nearby photo, the thumbnail stays empty and the panel says so. These are street-level photos, not interiors.
-
-Optional: set `NEXT_PUBLIC_CARTO_API_KEY` to your [CARTO](https://carto.com/) basemap API key for the light map tiles. Without it, the map falls back to Esri’s light-gray basemap (no key). Restart `npm run dev` after changing any `NEXT_PUBLIC_*` variable.
-
-Try: “Show me restaurant-ready storefronts in Brooklyn that may become available in the next 6 months.”
-
-## What the data is
-
-| Kind | What you see |
+| Variable | Role |
 | --- | --- |
-| City record | Storefront Registry vacancies, activity, sale dates, and lease dates when the filing includes `expir_dt_of_most_recent_lease`. DOB NOW jobs, DCWP licenses, DOF rolling sales, PLUTO, MTA stations, DOT bi-annual pedestrian counts, DOHMH restaurants. |
-| Derived | Turnover index, fit index, tenant-activity changes, neighborhood commercial-sale medians, and Gap Finder comparisons. Each piece names its source. |
-| Not filled in | Lease dates that are absent from the filing. Census ACS income, because `api.census.gov` required a key that was not configured. |
-| Demo | Three landlord opt-ins labeled demo, so that workflow is visible. Opt-ins you submit are stored for real and stay anonymous on the public map. |
+| `GEMINI_API_KEY` | Natural-language → filters + record summaries. Without it, a local parser + templates still work. |
+| `MAPILLARY_TOKEN` | Free sidewalk photos within ~50 m ([dashboard](https://www.mapillary.com/dashboard/developers)). No card. Missing token or photo → empty thumbnail. |
+| `NEXT_PUBLIC_CARTO_API_KEY` | Light basemap tiles; else Esri light-gray (no key). |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Google sign-in for the Lease desk (Web client, origin `http://localhost:3000`). Testing mode needs each account as a test user. |
+| `XAI_API_KEY` | SpaceXAI desk (`api.x.ai`). Without it (or on reject), the desk answers from filing search only. |
 
-Permits, licenses, sales, and PLUTO are joined on the tax lot, not a confirmed storefront unit. Vacancy counts toward a “next 6 months” search only when the latest filing is reporting year 2024 or 2025. Food-supply comparisons use DOHMH restaurant locations because the registry’s `FOOD SERVICES` label is too sparse to treat as a census of restaurants.
+Try: *“Restaurant-ready storefronts in Brooklyn that may open in the next 6 months.”*
 
-The map is a stratified sample of opportunity filings, not every storefront in the city. Neighborhood vacancy and retail shares for the twelve Brooklyn neighborhoods are full 2023/2024 registry counts.
+## Data
 
-Refresh the extract with `npm run fetch-data`, then `npm run db:setup`. `data/snapshot.json` is the copy the app loads so the demo still runs if those APIs are slow.
+| Layer | Contents |
+| --- | --- |
+| City records | Storefront Registry (vacancy, activity, sale/lease dates when `expir_dt_of_most_recent_lease` is present), DOB NOW jobs, DCWP licenses, DOF rolling sales, PLUTO, MTA stations, DOT pedestrian counts, DOHMH restaurants. |
+| Derived | Store Score, Fit, tenant-activity deltas, neighborhood sale medians, Gap Finder. Each cites a source. |
+| Gaps | Missing lease fields stay blank. Census ACS income skipped (API key not configured). |
+| Demo | Three labeled landlord opt-ins. Live opt-ins are stored and stay anonymous on the map. |
 
-The Lease desk is the SpaceXAI agent. It stays closed until there is an account. Continue with Google, then add the business name, and the account is stored in `user_accounts`. A typed name and email stays in this browser only. Google sign-in needs `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (a free Web client ID; no billing and no client secret). In Google Cloud Console, create an OAuth client, set the authorized JavaScript origin to `http://localhost:3000`, and put the client ID in `.env.local`. If the consent screen is in testing, add each Google account as a test user, or publish the app. Email, profile, and OpenID are basic scopes. Restart `npm run dev` after changing the client ID. The desk calls `https://api.x.ai/v1/responses` when `XAI_API_KEY` is set, shows each filing lookup as it happens, and drafts a note only from those filings. Approving a note stores it. Nothing is emailed, because no mail service is connected. If the key is missing or SpaceXAI rejects the call, the same desk answers from the filing search.
+**Joins & caveats**
+
+- Permits, licenses, sales, and PLUTO join on **tax lot**, not a confirmed unit.
+- “Next 6 months” vacancy uses latest filings for reporting years **2024–2025** only.
+- Food supply uses **DOHMH** locations; registry `FOOD SERVICES` is too sparse to treat as a census.
+- The map is a **stratified sample** of opportunity filings, not every storefront. Neighborhood vacancy/retail shares for the twelve Brooklyn NTAs are full 2023/2024 registry counts.
+- Timeline dates use **when the record was filed/issued**; lease ends and license expirations appear as subject dates, not as “happened in 2027.”
+
+Refresh extract: `npm run fetch-data`, then `npm run db:setup`. `data/snapshot.json` keeps the demo runnable when Open Data is slow. If timeline subject dates were loaded as `occurred_at`, repair with `node scripts/repair_timeline_dates.mjs`.
 
 ## Scoring
 
-Turnover points are assigned in `sql/schema.sql` by `refresh_signals()` from stored rows only: reported vacancy, a lease date that actually falls in a near-term window, a DOF or registry sale, construction reported on the filing, a recent DOB job, a lapsed DCWP license, an activity change across filings, a neighborhood sale-median increase, and a landlord opt-in. The total is capped at 100.
+**Store Score** (UI label; capped at 100) comes from `refresh_signals()` in `sql/schema.sql` — stored rows only: reported vacancy, near-term lease date on file, DOF/registry sale, construction on filing, recent DOB job, lapsed DCWP license, activity change across filings, neighborhood sale-median rise, landlord opt-in. Weights are adjustable in the app.
 
-`fit_components()` scores a requested use from the storefront filing, subway distance, and PLUTO class, retail area, and zoning when those fields matched. Missing fields add zero and say they were not matched.
+**Fit** (`fit_components()`) scores a requested use from the storefront filing, subway distance, and matched PLUTO class / retail area / zoning. Unmatched fields add zero and say so.
+
+## Lease desk
+
+Closed until there is an account (Google → business name → `user_accounts`; typed name/email stays in-browser only). With `XAI_API_KEY`, the desk calls SpaceXAI, streams filing lookups, and drafts notes only from those filings. Approve to store; nothing is emailed. No key → same flow from local filing search.
