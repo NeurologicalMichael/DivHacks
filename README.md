@@ -18,6 +18,8 @@ The database URL defaults to `postgres://leaselens:leaselens@localhost:5432/leas
 
 Optional: set `GEMINI_API_KEY` to let Gemini turn a sentence into filters and summarize records that were already retrieved. Without a key, a local parser handles the same searches and the on-screen explanations are templates built only from those records.
 
+Optional: set `MAPILLARY_TOKEN` to a free client token from the [Mapillary developer dashboard](https://www.mapillary.com/dashboard/developers). No credit card. When a sidewalk photo exists within 50 meters of the storefront, the detail panel shows it with CC BY-SA credit. Without a token, or when Mapillary has no nearby photo, the panel says so and does not invent one. These are street-level photos, not interiors.
+
 Try: “Show me restaurant-ready storefronts in Brooklyn that may become available in the next 6 months.”
 
 ## What the data is

@@ -35,7 +35,7 @@ function StreetPhoto({ id }: { id: string }) {
       .then((payload: { available?: boolean; reason?: string; copyright?: string; date?: string | null }) => {
         if (cancel) return;
         if (payload.available) {
-          setCopyright(payload.copyright || "© Google");
+          setCopyright(payload.copyright || "© Mapillary contributors, CC BY-SA");
           setDate(payload.date ?? null);
           setState("ready");
           return;
@@ -53,20 +53,20 @@ function StreetPhoto({ id }: { id: string }) {
   return (
     <figure className="facade">
       {state === "ready" ? (
-        <img src={`/api/streetview/image?id=${encodeURIComponent(id)}`} alt="Street View of this address" />
+        <img src={`/api/streetview/image?id=${encodeURIComponent(id)}`} alt="Street-level photo near this address" />
       ) : (
         <div className="facade-empty">
           {state === "loading"
-            ? "Looking up Street View…"
+            ? "Looking up a street photo…"
             : state === "unconfigured"
-              ? "Add GOOGLE_MAPS_API_KEY to show a Street View photo of this address."
-              : "No Street View photo is on file for this address."}
+              ? "Add a free Mapillary token to show a street photo. No credit card."
+              : "No nearby street photo is on file for this address."}
         </div>
       )}
       {state === "ready" && (
         <figcaption>
           {copyright}
-          {date ? ` · panorama ${date}` : ""}
+          {date ? ` · ${date}` : ""}
           {" · sidewalk view, not an interior"}
         </figcaption>
       )}
