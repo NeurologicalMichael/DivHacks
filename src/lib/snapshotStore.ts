@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { availabilityFor } from "./availability";
 import { toIsoDate } from "./format";
+import { matchMetric } from "./signals";
 import { mergePermitEvents, normalizeTimeline } from "./timeline";
 import type { BreakdownItem, Gap, SearchFilters, Signal, StorefrontDetail, Summary } from "./types";
 
@@ -343,6 +344,14 @@ function toSummary(property: Prop, category: string, snap: Snapshot): Summary {
       provenance: s.provenance,
       weight: s.weight,
     })),
+    metricIds: [
+      ...new Set(
+        signals
+          .map((s) => matchMetric(s.label)?.id)
+          .filter((id): id is NonNullable<typeof id> => id != null)
+          .map(String),
+      ),
+    ],
   };
 }
 

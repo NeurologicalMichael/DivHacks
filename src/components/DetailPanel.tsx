@@ -176,6 +176,25 @@ export function DetailPanel({
         </section>
       )}
 
+      {!mixOpen ? (
+        <button type="button" className="more-btn block" onClick={() => setMixOpen(true)}>
+          How the score breaks down ▾
+        </button>
+      ) : (
+        <div className="panel-card">
+          <header className="section-head">
+            <h3>Score breakdown</h3>
+            <button type="button" className="text-btn" onClick={() => setMixOpen(false)}>
+              Hide ▴
+            </button>
+          </header>
+          <p className="scoring-lead">
+            These public-record signals add up to <strong>{turnover}</strong> turnover points.
+          </p>
+          <MetricsDonut metrics={metrics} />
+        </div>
+      )}
+
       <section className="panel-card">
         <header className="section-head">
           <h3>Why it was flagged</h3>
@@ -258,25 +277,6 @@ export function DetailPanel({
           </>
         )}
       </section>
-
-      {!mixOpen ? (
-        <button type="button" className="more-btn block" onClick={() => setMixOpen(true)}>
-          How the score breaks down ▾
-        </button>
-      ) : (
-        <div className="panel-card">
-          <header className="section-head">
-            <h3>Score breakdown</h3>
-            <button type="button" className="text-btn" onClick={() => setMixOpen(false)}>
-              Hide ▴
-            </button>
-          </header>
-          <p className="scoring-lead">
-            These public-record signals add up to <strong>{turnover}</strong> turnover points.
-          </p>
-          <MetricsDonut metrics={metrics} />
-        </div>
-      )}
 
       <section className="panel-card">
         <header className="section-head">

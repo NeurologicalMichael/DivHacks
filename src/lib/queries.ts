@@ -10,6 +10,7 @@ import {
   snapshotSearch,
 } from "./snapshotStore";
 import { toIsoDate } from "./format";
+import { matchMetric } from "./signals";
 import { normalizeTimeline } from "./timeline";
 import type { BreakdownItem, Gap, SearchFilters, StorefrontDetail, Summary } from "./types";
 
@@ -83,6 +84,18 @@ function mapSummary(row: Row, category: string): Summary {
       landlordWindow: num(row.landlord_window),
     }),
     topSignals: Array.isArray(row.top_signals) ? (row.top_signals as Summary["topSignals"]) : [],
+    metricIds: Array.isArray(row.metric_ids)
+      ? (row.metric_ids as unknown[]).map(String)
+      : Array.isArray(row.top_signals)
+        ? [
+            ...new Set(
+              (row.top_signals as Summary["topSignals"])
+                .map((s) => matchMetric(s.label)?.id)
+                .filter((id): id is NonNullable<typeof id> => id != null)
+                .map(String),
+            ),
+          ]
+        : [],
   };
 }
 
@@ -170,7 +183,12 @@ async function searchStorefrontsDb(filters: SearchFilters) {
              ORDER BY weight DESC
              LIMIT 3
            ) s
-         ) AS top_signals
+         ) AS top_signals,
+         (
+           SELECT coalesce(jsonb_agg(DISTINCT s.signal_type), '[]'::jsonb)
+           FROM signals s
+           WHERE s.property_id = p.id
+         ) AS metric_ids
        FROM v_storefronts p
        ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
      )

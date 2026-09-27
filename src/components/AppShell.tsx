@@ -14,12 +14,15 @@ import {
   type RenterProfile,
 } from "@/lib/profile";
 import type { Gap, SearchFilters, StorefrontDetail, Summary } from "@/lib/types";
+import type { MetricId } from "@/lib/signals";
+import { matchMetric } from "@/lib/signals";
 import type { Pin } from "./MapCanvas";
 import { DetailPanel } from "./DetailPanel";
 import { FilterBar } from "./FilterBar";
 import { GapPanel } from "./GapPanel";
 import { Landing, type Persona } from "./Landing";
 import { LandlordPanel } from "./LandlordPanel";
+import { MapMetricFilters } from "./MapMetricFilters";
 import { Onboarding } from "./Onboarding";
 import type { Watch } from "./OwnerPanel";
 import { StreetThumb } from "./StreetThumb";
@@ -72,6 +75,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [usingProfile, setUsingProfile] = useState(false);
   const [booted, setBooted] = useState(false);
+  const [metricFilters, setMetricFilters] = useState<MetricId[]>([]);
 
   const search = useCallback(async (
     nextQuery: string,
@@ -236,9 +240,21 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
     return copy;
   }, [results, sortKey]);
 
+  const filtered = useMemo(() => {
+    if (!metricFilters.length) return sorted;
+    return sorted.filter((result) => {
+      const ids = new Set(
+        result.metricIds?.length
+          ? result.metricIds
+          : result.topSignals.map((s) => matchMetric(s.label)?.id).filter(Boolean),
+      );
+      return metricFilters.every((id) => ids.has(id));
+    });
+  }, [sorted, metricFilters]);
+
   const pins = useMemo<Pin[]>(
     () =>
-      sorted.map((result) => ({
+      filtered.map((result) => ({
         id: result.id,
         lng: result.lng,
         lat: result.lat,
@@ -246,8 +262,16 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
         active: result.id === selectedId,
         label: result.neighborhood ? `${result.neighborhood} storefront` : titleAddress(result.address),
       })),
-    [sorted, selectedId],
+    [filtered, selectedId],
   );
+
+  useEffect(() => {
+    if (selectedId && metricFilters.length && !filtered.some((r) => r.id === selectedId)) {
+      setSelectedId(null);
+      setDetail(null);
+      setExplanation(null);
+    }
+  }, [filtered, metricFilters.length, selectedId]);
 
   if (!booted) {
     return <div className="boot">Loading LeaseLens…</div>;
@@ -278,7 +302,10 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
           }}
         >
           <span className="search-icon" aria-hidden="true">
-            ⌕
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round">
+              <circle cx="14" cy="10" r="6.25" />
+              <path d="M9.2 14.8 3.5 20.5" />
+            </svg>
           </span>
           <input
             aria-label="Search storefronts"
@@ -354,7 +381,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
           ) : (
             <div className="rail-scroll">
               {error && <p className="error pad">{error}</p>}
-              {sorted.map((result) => (
+              {filtered.map((result) => (
                 <button
                   key={result.id}
                   type="button"
@@ -370,7 +397,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
                   </span>
                 </button>
               ))}
-              {!loading && sorted.length === 0 && (
+              {!loading && filtered.length === 0 && (
                 <p className="empty pad">No storefronts matched those filters.</p>
               )}
             </div>
@@ -378,10 +405,13 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
         </aside>
 
         <section className="map-pane">
-          <MapCanvas
-            pins={pins}
-            onSelect={(id) => openStorefront(id, filters?.category ?? null).catch((caught) => setError(caught.message))}
-          />
+          <div className="map-canvas-wrap">
+            <MapMetricFilters selected={metricFilters} onChange={setMetricFilters} />
+            <MapCanvas
+              pins={pins}
+              onSelect={(id) => openStorefront(id, filters?.category ?? null).catch((caught) => setError(caught.message))}
+            />
+          </div>
         </section>
 
         <aside className="detail-rail">

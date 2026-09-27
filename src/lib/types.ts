@@ -45,6 +45,8 @@ export type Summary = {
   hasLandlordOptIn: boolean;
   availability: Availability;
   topSignals: { label: string; provenance: string; weight: number }[];
+  /** Metric catalog ids present on this storefront (for map metric filters). */
+  metricIds: string[];
 };
 
 export type StorefrontDetail = Summary & {
