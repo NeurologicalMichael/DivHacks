@@ -22,6 +22,7 @@ import { Landing, type Persona } from "./Landing";
 import { LandlordPanel } from "./LandlordPanel";
 import { Onboarding } from "./Onboarding";
 import type { Watch } from "./OwnerPanel";
+import { StreetThumb } from "./StreetThumb";
 
 const EXAMPLE = "Show me restaurant-ready storefronts in Brooklyn that may become available in the next 6 months.";
 
@@ -336,7 +337,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
                     className={`result-card${watch.propertyId === selectedId ? " active" : ""}`}
                     onClick={() => openStorefront(watch.propertyId, filters?.category ?? null).catch((caught) => setError(caught.message))}
                   >
-                    <span className="thumb" />
+                    <StreetThumb id={watch.propertyId} />
                     <span className="result-meta">
                       <b>{titleAddress(watch.address)}</b>
                       <span className="sub">
@@ -377,7 +378,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
                   className={`result-card${result.id === selectedId ? " active" : ""}`}
                   onClick={() => openStorefront(result.id, filters?.category ?? null).catch((caught) => setError(caught.message))}
                 >
-                  <span className="thumb" />
+                  <StreetThumb id={result.id} />
                   <span className="result-meta">
                     <b>{titleAddress(result.address)}</b>
                     <span className="sub">

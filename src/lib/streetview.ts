@@ -20,6 +20,22 @@ type MapillaryImage = {
 const TTL = 12 * 60 * 60 * 1000;
 const metaCache = new Map<string, MetaHit>();
 const imageCache = new Map<string, ImageHit>();
+let lookups = 0;
+const lookupWaiters: Array<() => void> = [];
+
+function takeLookup() {
+  if (lookups < 4) {
+    lookups += 1;
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => lookupWaiters.push(resolve));
+}
+
+function releaseLookup() {
+  const next = lookupWaiters.shift();
+  if (next) next();
+  else lookups -= 1;
+}
 
 function fresh(at: number) {
   return Date.now() - at < TTL;
@@ -95,7 +111,13 @@ async function resolve(id: string): Promise<MetaHit> {
     metaCache.set(id, miss);
     return miss;
   }
-  const image = await nearestImage(place, token);
+  await takeLookup();
+  let image: MapillaryImage | null = null;
+  try {
+    image = await nearestImage(place, token);
+  } finally {
+    releaseLookup();
+  }
   const hit: MetaHit = image?.thumb_1024_url
     ? {
         at: Date.now(),
