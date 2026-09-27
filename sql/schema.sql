@@ -615,7 +615,7 @@ $$;
 
 CREATE VIEW v_storefronts AS
 SELECT p.*,
-  LEAST(100, COALESCE(t.turnover_score, 0))::int AS turnover_score,
+  COALESCE(t.turnover_score, 0)::int AS turnover_score,
   COALESCE(t.signal_count, 0)::int AS signal_count,
   EXISTS (SELECT 1 FROM landlord_signals l WHERE l.property_id = p.id AND l.active AND l.is_demo) AS has_demo_landlord,
   EXISTS (SELECT 1 FROM landlord_signals l WHERE l.property_id = p.id AND l.active AND NOT l.is_demo) AS has_landlord_opt_in

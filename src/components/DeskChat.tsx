@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { apiFetch } from "@/lib/apiFetch";
 import type { DeskAccount, DeskDraft, DeskEvent } from "@/lib/desk";
 import type { Summary } from "@/lib/types";
 
@@ -96,7 +97,7 @@ export function DeskChat({
       setFormError("");
       setSaving(true);
       try {
-        const response = await fetch("/api/auth/google", {
+        const response = await apiFetch("/api/auth/google", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ credential }),
@@ -207,7 +208,7 @@ export function DeskChat({
       }
       setSaving(true);
       try {
-        const response = await fetch("/api/auth/google", {
+        const response = await apiFetch("/api/auth/google", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ credential: googleCredential, business: next.business, name: next.name }),
@@ -259,7 +260,7 @@ export function DeskChat({
       });
     };
     try {
-      const response = await fetch("/api/desk", {
+      const response = await apiFetch("/api/desk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId, account, selectedId, messages: history }),
@@ -313,7 +314,7 @@ export function DeskChat({
 
   async function approve(bubbleIndex: number, draft: DeskDraft) {
     if (!account) return;
-    const response = await fetch("/api/desk/approve", {
+    const response = await apiFetch("/api/desk/approve", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sessionId, account, draft }),

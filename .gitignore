@@ -1,5 +1,7 @@
 node_modules
 .next
+out
+public/snapshot.json
 .env
 .env.local
 *.log

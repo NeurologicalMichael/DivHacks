@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { apiFetch } from "@/lib/apiFetch";
 import { categoryLabel } from "@/lib/catalog";
 import { formatDate, formatMeters, formatMoney, titleAddress } from "@/lib/format";
 import {
@@ -41,7 +42,7 @@ function StreetPhoto({ id }: { id: string }) {
   useEffect(() => {
     let cancel = false;
     setState("loading");
-    fetch(`/api/streetview?id=${encodeURIComponent(id)}`)
+    apiFetch(`/api/streetview?id=${encodeURIComponent(id)}`)
       .then((response) => response.json())
       .then((payload: { available?: boolean; reason?: string; copyright?: string; date?: string | null }) => {
         if (cancel) return;
@@ -133,7 +134,7 @@ export function DetailPanel({
     const ticket = ++advanceTicket.current;
     setAdvanceBusy(true);
     try {
-      const response = await fetch("/api/explain", {
+      const response = await apiFetch("/api/explain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
