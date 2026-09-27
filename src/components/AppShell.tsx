@@ -244,7 +244,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
       </aside>
       <section className="panel">
         <header className="brand">
-          <div className="mark" aria-hidden="true"><span /></div>
+          <img className="mark" src="/leaselens-mark.png" alt="" />
           <div>
             <h1>LeaseLens</h1>
             <p>Find the storefront before the listing does.</p>
