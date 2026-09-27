@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { categoryLabel } from "@/lib/catalog";
 import { formatDate, formatMeters, formatMoney, titleAddress } from "@/lib/format";
 import {
@@ -14,6 +14,7 @@ import {
   type WeightMap,
 } from "@/lib/signals";
 import { HoverTip } from "./HoverTip";
+import type { AdvanceDemand } from "@/lib/plainSummary";
 import type { StorefrontDetail } from "@/lib/types";
 import { MetricsDonut, ScorePair } from "./MetricsDonut";
 
@@ -91,6 +92,7 @@ export function DetailPanel({
   onExplain,
   showAiSummary = true,
   signalWeights,
+  demand,
 }: {
   detail: StorefrontDetail;
   explanation: { text: string; source: string } | null;
@@ -98,6 +100,7 @@ export function DetailPanel({
   onExplain: () => void;
   showAiSummary?: boolean;
   signalWeights?: WeightMap;
+  demand?: AdvanceDemand;
 }) {
   const metrics = useMemo(
     () => buildMetricStates(detail.signals, signalWeights),
@@ -108,6 +111,10 @@ export function DetailPanel({
   const [mixOpen, setMixOpen] = useState(true);
   const [areaOpen, setAreaOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [advanceOpen, setAdvanceOpen] = useState(false);
+  const [advanceText, setAdvanceText] = useState("");
+  const [advanceBusy, setAdvanceBusy] = useState(false);
+  const advanceTicket = useRef(0);
 
   useEffect(() => {
     setShowAllFlags(false);
@@ -115,7 +122,38 @@ export function DetailPanel({
     setMixOpen(true);
     setAreaOpen(false);
     setDetailsOpen(false);
+    setAdvanceOpen(false);
+    setAdvanceText("");
+    advanceTicket.current += 1;
   }, [detail.id]);
+
+  async function openAdvance() {
+    setAdvanceOpen(true);
+    if (advanceText || advanceBusy) return;
+    const ticket = ++advanceTicket.current;
+    setAdvanceBusy(true);
+    try {
+      const response = await fetch("/api/explain", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          propertyId: detail.id,
+          category: demand?.category ?? detail.fitCategory,
+          advance: true,
+          demand,
+        }),
+      });
+      const payload = await response.json();
+      if (ticket !== advanceTicket.current) return;
+      if (!response.ok) throw new Error(payload.error || "Analysis failed");
+      setAdvanceText(payload.text);
+    } catch (caught) {
+      if (ticket !== advanceTicket.current) return;
+      setAdvanceText(caught instanceof Error ? caught.message : "Analysis failed");
+    } finally {
+      if (ticket === advanceTicket.current) setAdvanceBusy(false);
+    }
+  }
 
   // Load the summary as soon as a storefront is selected.
   useEffect(() => {
@@ -187,6 +225,18 @@ export function DetailPanel({
             <p className="summary-text">{explanation.text}</p>
           ) : (
             <p className="muted">{busy ? "Reading the records…" : "Preparing a summary…"}</p>
+          )}
+          {explanation && (
+            <button
+              type="button"
+              className={advanceOpen ? "advance-link is-open" : "advance-link"}
+              onClick={() => void openAdvance()}
+            >
+              Advance Analysis
+            </button>
+          )}
+          {advanceOpen && (
+            <p className="advance-text">{advanceBusy ? "Comparing this filing with your search…" : advanceText}</p>
           )}
         </section>
       )}

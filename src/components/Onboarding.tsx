@@ -1,52 +1,54 @@
 "use client";
 
 import { useState } from "react";
-import { BOROUGHS } from "@/lib/catalog";
+import { BOROUGHS, CATEGORIES, NEIGHBORHOODS } from "@/lib/catalog";
 import {
-  BEDS,
   COMMERCIAL_BUDGETS,
   COMMERCIAL_MUSTS,
-  COMMERCIAL_USES,
-  HOME_BUDGETS,
-  HOME_MUSTS,
-  HOUSEHOLDS,
-  LEASE_KINDS,
-  PETS,
   SIZE_BANDS,
   TIMINGS,
   emptyDraft,
   neighborhoodsFor,
   stepError,
-  wantsCommercial,
-  wantsHome,
-  type BudgetBand,
   type RenterProfile,
 } from "@/lib/profile";
 
 const STEPS = [
-  { title: "Question 1", lead: "What are you looking to lease?", category: "Lease type" },
-  { title: "Question 2", lead: "What does the space need to be?", category: "Category" },
-  { title: "Question 3", lead: "Budget and timing for this search.", category: "Budget" },
-  { title: "Question 4", lead: "Where should LeaseLens look first?", category: "Place" },
+  { title: "Question 1", lead: "What kind of storefront should LeaseLens look for?" },
+  { title: "Question 2", lead: "Budget, size, and when you need the space." },
+  { title: "Question 3", lead: "Where should the search look, and what else matters?" },
 ];
 
 function toggle<T extends string>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
 }
 
+function storefrontDraft(initial: RenterProfile | null): RenterProfile {
+  const base = initial ?? emptyDraft();
+  return {
+    ...base,
+    leaseKind: "commercial",
+    beds: null,
+    household: null,
+    pets: null,
+    homeBudget: null,
+  };
+}
+
 export function Onboarding({
   initial,
   onSave,
-  onSkip: _onSkip,
-  onClose: _onClose,
+  onSkip,
 }: {
   initial: RenterProfile | null;
-  onSave: (profile: RenterProfile) => void;
+  onSave: (profile: RenterProfile, extras: { vacantOnly: boolean; minTurnover: number }) => void;
   onSkip?: () => void;
   onClose?: () => void;
 }) {
   const [step, setStep] = useState(0);
-  const [draft, setDraft] = useState<RenterProfile>(initial ?? emptyDraft());
+  const [draft, setDraft] = useState<RenterProfile>(() => storefrontDraft(initial));
+  const [vacantOnly, setVacantOnly] = useState(false);
+  const [minTurnover, setMinTurnover] = useState(0);
   const [error, setError] = useState("");
 
   function patch(partial: Partial<RenterProfile>) {
@@ -55,7 +57,10 @@ export function Onboarding({
   }
 
   function finish() {
-    onSave({ ...draft, savedAt: new Date().toISOString() });
+    onSave(
+      { ...draft, leaseKind: "commercial", savedAt: new Date().toISOString() },
+      { vacantOnly, minTurnover },
+    );
   }
 
   function next() {
@@ -71,24 +76,12 @@ export function Onboarding({
     finish();
   }
 
-  function skip() {
-    setError("");
-    if (step < STEPS.length - 1) {
-      setStep(step + 1);
-      return;
-    }
-    finish();
-  }
-
-  const neighborhoods = neighborhoodsFor(draft.boroughs);
-  const skippedLease = draft.leaseKind == null;
-  const commercial = wantsCommercial(draft) || skippedLease;
-  const home = wantsHome(draft);
+  const neighborhoods = draft.boroughs.length ? neighborhoodsFor(draft.boroughs) : [...NEIGHBORHOODS];
   const current = STEPS[step];
 
   return (
     <div className="onboard">
-      <article className="onboard-sheet">
+      <article className="onboard-sheet" onClick={(event) => event.stopPropagation()}>
         <header className="onboard-head">
           <h2>{current.title}</h2>
           <p className="onboard-lead">{current.lead}</p>
@@ -96,161 +89,72 @@ export function Onboarding({
 
         <div className="onboard-body">
           {step === 0 && (
-            <section>
-              <p className="onboard-label">{current.category}</p>
-              <div className="onboard-pills">
-                {LEASE_KINDS.map((kind) => (
+            <div className="onboard-sections">
+              <section>
+                <p className="onboard-label">Business use</p>
+                <div className="onboard-pills">
                   <button
-                    key={kind.id}
                     type="button"
-                    className={draft.leaseKind === kind.id ? "onboard-pill is-on" : "onboard-pill"}
-                    onClick={() => patch({ leaseKind: kind.id, budget: null, homeBudget: null })}
+                    className={draft.use == null ? "onboard-pill is-on" : "onboard-pill"}
+                    onClick={() => patch({ use: null })}
                   >
-                    {kind.label}
+                    Any storefront
                   </button>
-                ))}
-              </div>
-              <p className="onboard-hint">
-                {LEASE_KINDS.find((k) => k.id === draft.leaseKind)?.hint ?? "Pick one, or skip this question."}
-              </p>
-            </section>
+                  {CATEGORIES.map((use) => (
+                    <button
+                      key={use.id}
+                      type="button"
+                      className={draft.use === use.id ? "onboard-pill is-on" : "onboard-pill"}
+                      onClick={() => patch({ use: use.id })}
+                    >
+                      {use.label}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  className="onboard-input"
+                  aria-label="What you are opening"
+                  placeholder="Optional: what you are opening"
+                  value={draft.concept}
+                  maxLength={80}
+                  onChange={(event) => patch({ concept: event.target.value })}
+                />
+              </section>
+            </div>
           )}
 
           {step === 1 && (
             <div className="onboard-sections">
-              {skippedLease && (
-                <p className="onboard-hint">Lease type was skipped, so these questions are for a business space.</p>
-              )}
-              {commercial && (
-                <section>
-                  <p className="onboard-label">Category</p>
-                  <div className="onboard-pills">
-                    {COMMERCIAL_USES.map((use) => (
-                      <button
-                        key={use.id}
-                        type="button"
-                        className={draft.use === use.id ? "onboard-pill is-on" : "onboard-pill"}
-                        onClick={() => patch({ use: use.id })}
-                      >
-                        {use.label}
-                      </button>
-                    ))}
-                  </div>
-                  <input
-                    className="onboard-input"
-                    aria-label="What you are opening"
-                    placeholder="Optional: what you are opening"
-                    value={draft.concept}
-                    maxLength={80}
-                    onChange={(event) => patch({ concept: event.target.value })}
-                  />
-                </section>
-              )}
-              {home && (
-                <section>
-                  <p className="onboard-label">Home</p>
-                  <div className="onboard-pills">
-                    {BEDS.map((beds) => (
-                      <button
-                        key={beds.id}
-                        type="button"
-                        className={draft.beds === beds.id ? "onboard-pill is-on" : "onboard-pill"}
-                        onClick={() => patch({ beds: beds.id })}
-                      >
-                        {beds.label}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="onboard-pills">
-                    {HOUSEHOLDS.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        className={draft.household === item.id ? "onboard-pill is-on" : "onboard-pill"}
-                        onClick={() => patch({ household: item.id })}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="onboard-pills">
-                    {PETS.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        className={draft.pets === item.id ? "onboard-pill is-on" : "onboard-pill"}
-                        onClick={() => patch({ pets: item.id })}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              )}
-            </div>
-          )}
-
-          {step === 2 && (
-            <div className="onboard-sections">
-              {skippedLease && (
-                <p className="onboard-hint">Lease type was skipped, so rent and size are for a business space.</p>
-              )}
-              {commercial && (
-                <section>
-                  <p className="onboard-label">Maximum business rent</p>
-                  <div className="onboard-pills">
-                    {COMMERCIAL_BUDGETS.map((band) => (
-                      <button
-                        key={band.id}
-                        type="button"
-                        className={draft.budget === band.id ? "onboard-pill is-on" : "onboard-pill"}
-                        onClick={() => patch({ budget: band.id })}
-                      >
-                        {band.label}
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              )}
-              {commercial && (
-                <section>
-                  <p className="onboard-label">Size</p>
-                  <div className="onboard-pills">
-                    {SIZE_BANDS.map((band) => (
-                      <button
-                        key={band.id}
-                        type="button"
-                        className={draft.size === band.id ? "onboard-pill is-on" : "onboard-pill"}
-                        onClick={() => patch({ size: band.id })}
-                      >
-                        {band.label}
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              )}
-              {home && (
-                <section>
-                  <p className="onboard-label">Maximum home rent</p>
-                  <div className="onboard-pills">
-                    {HOME_BUDGETS.map((band) => {
-                      const selected = draft.leaseKind === "both" ? draft.homeBudget === band.id : draft.budget === band.id;
-                      return (
-                        <button
-                          key={band.id}
-                          type="button"
-                          className={selected ? "onboard-pill is-on" : "onboard-pill"}
-                          onClick={() =>
-                            patch(draft.leaseKind === "both" ? { homeBudget: band.id as BudgetBand } : { budget: band.id })
-                          }
-                        >
-                          {band.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-              )}
+              <section>
+                <p className="onboard-label">Maximum rent</p>
+                <div className="onboard-pills">
+                  {COMMERCIAL_BUDGETS.map((band) => (
+                    <button
+                      key={band.id}
+                      type="button"
+                      className={draft.budget === band.id ? "onboard-pill is-on" : "onboard-pill"}
+                      onClick={() => patch({ budget: band.id })}
+                    >
+                      {band.label}
+                    </button>
+                  ))}
+                </div>
+              </section>
+              <section>
+                <p className="onboard-label">Size</p>
+                <div className="onboard-pills">
+                  {SIZE_BANDS.map((band) => (
+                    <button
+                      key={band.id}
+                      type="button"
+                      className={draft.size === band.id ? "onboard-pill is-on" : "onboard-pill"}
+                      onClick={() => patch({ size: band.id })}
+                    >
+                      {band.label}
+                    </button>
+                  ))}
+                </div>
+              </section>
               <section>
                 <p className="onboard-label">When you need it</p>
                 <div className="onboard-pills">
@@ -266,10 +170,29 @@ export function Onboarding({
                   ))}
                 </div>
               </section>
+              <section>
+                <p className="onboard-label">Vacancy</p>
+                <div className="onboard-pills">
+                  <button
+                    type="button"
+                    className={vacantOnly ? "onboard-pill is-on" : "onboard-pill"}
+                    onClick={() => setVacantOnly(true)}
+                  >
+                    Vacant filings only
+                  </button>
+                  <button
+                    type="button"
+                    className={!vacantOnly ? "onboard-pill is-on" : "onboard-pill"}
+                    onClick={() => setVacantOnly(false)}
+                  >
+                    Any filing
+                  </button>
+                </div>
+              </section>
             </div>
           )}
 
-          {step === 3 && (
+          {step === 2 && (
             <div className="onboard-sections">
               <section>
                 <p className="onboard-label">Boroughs</p>
@@ -307,9 +230,6 @@ export function Onboarding({
                     </button>
                   ))}
                 </div>
-                {neighborhoods.length === 0 && (
-                  <p className="onboard-hint">Choose a borough first, or continue with borough only.</p>
-                )}
               </section>
               <section>
                 <p className="onboard-label">Subway</p>
@@ -323,7 +243,7 @@ export function Onboarding({
                   </button>
                   <button
                     type="button"
-                    className={draft.nearSubway === false ? "onboard-pill is-on" : "onboard-pill"}
+                    className={draft.nearSubway !== true ? "onboard-pill is-on" : "onboard-pill"}
                     onClick={() => patch({ nearSubway: false })}
                   >
                     No preference
@@ -333,19 +253,33 @@ export function Onboarding({
               <section>
                 <p className="onboard-label">Must-haves</p>
                 <div className="onboard-pills">
-                  {(commercial ? COMMERCIAL_MUSTS : [])
-                    .concat(home ? HOME_MUSTS : [])
-                    .map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        className={draft.mustHaves.includes(item.id) ? "onboard-pill is-on" : "onboard-pill"}
-                        onClick={() => patch({ mustHaves: toggle(draft.mustHaves, item.id) })}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
+                  {COMMERCIAL_MUSTS.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={draft.mustHaves.includes(item.id) ? "onboard-pill is-on" : "onboard-pill"}
+                      onClick={() => patch({ mustHaves: toggle(draft.mustHaves, item.id) })}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
                 </div>
+              </section>
+              <section>
+                <p className="onboard-label">Minimum Store Score</p>
+                <input
+                  className="onboard-input"
+                  type="number"
+                  min={0}
+                  max={100}
+                  aria-label="Minimum Store Score"
+                  placeholder="0"
+                  value={minTurnover || ""}
+                  onChange={(event) => {
+                    const next = event.target.value === "" ? 0 : Math.min(100, Math.max(0, Number(event.target.value)));
+                    setMinTurnover(Number.isFinite(next) ? next : 0);
+                  }}
+                />
               </section>
             </div>
           )}
@@ -353,8 +287,8 @@ export function Onboarding({
 
         {error && <p className="onboard-error">{error}</p>}
         <footer className="onboard-foot">
-          <button type="button" className="onboard-skip" onClick={skip}>
-            Skip
+          <button type="button" className="onboard-skip" onClick={() => onSkip?.()}>
+            Skip for now
           </button>
           <div className="onboard-foot-actions">
             {step > 0 && (
@@ -370,7 +304,7 @@ export function Onboarding({
               </button>
             )}
             <button type="button" className="onboard-primary" onClick={next}>
-              Continue
+              {step < STEPS.length - 1 ? "Continue" : "See storefronts"}
             </button>
           </div>
         </footer>

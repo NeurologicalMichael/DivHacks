@@ -152,6 +152,25 @@ Records: ${JSON.stringify(sample)}`,
   }
 }
 
+export async function advanceAnalysis(demand: unknown, records: unknown, draft: string) {
+  const source = JSON.stringify({ demand, records, draft });
+  const text = await generate(
+    `Rewrite the draft so it sounds like a person explaining one storefront to the user.
+Keep every fact in the draft. Do not add addresses, dates, prices, stations, scores, or business names that are not already in the draft.
+Keep the search quote, the address, the fit number, and the word "because" with the reasons already written.
+Short sentences. Everyday words. No bullet points. Max 160 words.
+Draft:
+${draft}`,
+    false,
+  );
+  if (!text || !grounded(text, source)) return null;
+  const polished = text.trim();
+  if (!/because/i.test(polished) || !polished.includes(String((records as { fitScore?: number }).fitScore ?? ""))) {
+    return null;
+  }
+  return polished;
+}
+
 export async function summarizeRecords(instruction: string, records: unknown) {
   const source = JSON.stringify(records);
   const text = await generate(

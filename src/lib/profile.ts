@@ -313,19 +313,11 @@ export function applySuggestedOrder<T extends { id: string }>(fallback: T[], ord
 }
 
 export function stepError(profile: RenterProfile, step: number): string {
-  if (step === 0 && !profile.leaseKind) return "Choose what you are leasing.";
   if (step === 1) {
-    if (wantsCommercial(profile) && !profile.use) return "Choose the kind of business space.";
-    if (wantsHome(profile) && !profile.beds) return "Choose how many bedrooms you need.";
-  }
-  if (step === 2) {
-    if (wantsCommercial(profile) && !profile.budget) return "Choose a rent range, or Not sure yet.";
-    if (wantsHome(profile) && !(profile.leaseKind === "both" ? profile.homeBudget : profile.budget)) {
-      return "Choose a rent range, or Not sure yet.";
-    }
+    if (!profile.budget) return "Choose a rent range, or Not sure yet.";
     if (!profile.timing) return "Choose when you need the space.";
   }
-  if (step === 3 && profile.boroughs.length === 0) return "Choose at least one borough.";
+  if (step === 2 && profile.boroughs.length === 0) return "Choose at least one borough.";
   return "";
 }
 

@@ -32,6 +32,7 @@ import { DetailPanel } from "./DetailPanel";
 import { FilterBar } from "./FilterBar";
 import { GapPanel } from "./GapPanel";
 import { Landing, type Persona } from "./Landing";
+import { Onboarding } from "./Onboarding";
 import { LandlordPanel } from "./LandlordPanel";
 import { MapMetricFilters } from "./MapMetricFilters";
 import type { Watch } from "./OwnerPanel";
@@ -123,6 +124,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
   const [profile, setProfile] = useState<RenterProfile | null>(null);
   const [usingProfile, setUsingProfile] = useState(false);
   const [booted, setBooted] = useState(false);
+  const [onboarding, setOnboarding] = useState(false);
   const [metricFilters, setMetricFilters] = useState<MetricId[]>([]);
   const [deskOpen, setDeskOpen] = useState(false);
   const [signalsOpen, setSignalsOpen] = useState(false);
@@ -278,15 +280,24 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
   }
 
   function choosePersona(next: Persona) {
+    if (next === "entrepreneur") {
+      setPersona("entrepreneur");
+      setMode("explore");
+      setOnboarding(true);
+      if (!results.length) {
+        if (profile) {
+          const sentence = profileSentence(profile);
+          setQuery(sentence);
+          search(sentence, { filters: profileToFilters(profile), fromProfile: true }).catch((caught) => setError(caught.message));
+        } else {
+          search(EXAMPLE).catch((caught) => setError(caught.message));
+        }
+      }
+      return;
+    }
     setPersona(next);
     if (!results.length) {
-      if (next === "entrepreneur" && profile) {
-        const sentence = profileSentence(profile);
-        setQuery(sentence);
-        search(sentence, { filters: profileToFilters(profile), fromProfile: true }).catch((caught) => setError(caught.message));
-      } else {
-        search(EXAMPLE).catch((caught) => setError(caught.message));
-      }
+      search(EXAMPLE).catch((caught) => setError(caught.message));
     }
     if (next === "shop_owner") {
       setMode("owner");
@@ -298,6 +309,21 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
       return;
     }
     setMode("explore");
+  }
+
+  function finishOnboarding(next: RenterProfile, extras: { vacantOnly: boolean; minTurnover: number }) {
+    const profile = { ...next, leaseKind: "commercial" as const };
+    setOnboarding(false);
+    const filters = profileToFilters(profile);
+    applyFilters(
+      {
+        ...filters,
+        vacantOnly: extras.vacantOnly,
+        minTurnover: extras.minTurnover,
+        months: extras.vacantOnly ? null : filters.months,
+      },
+      profile,
+    );
   }
 
   function applyFilters(next: SearchFilters, nextProfile: RenterProfile) {
@@ -551,6 +577,17 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
                 busy={explaining}
                 showAiSummary={persona === "entrepreneur"}
                 signalWeights={signalWeights}
+                demand={{
+                  query,
+                  boroughs: filters?.boroughs ?? [],
+                  neighborhoods: filters?.neighborhoods ?? [],
+                  category: filters?.category ?? null,
+                  months: filters?.months ?? null,
+                  nearSubway: Boolean(filters?.nearSubway),
+                  vacantOnly: Boolean(filters?.vacantOnly),
+                  minTurnover: filters?.minTurnover ?? 0,
+                  concept: profile?.concept ?? "",
+                }}
                 onExplain={async () => {
                   setExplaining(true);
                   try {
@@ -595,6 +632,9 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
         onClose={() => setSignalsOpen(false)}
         onApply={applySignalWeights}
       />
+      {onboarding && (
+        <Onboarding initial={profile} onSave={finishOnboarding} onSkip={() => setOnboarding(false)} />
+      )}
     </main>
   );
 }
