@@ -17,6 +17,7 @@ import type { Gap, SearchFilters, StorefrontDetail, Summary } from "@/lib/types"
 import type { MetricId } from "@/lib/signals";
 import { matchMetric } from "@/lib/signals";
 import type { Pin } from "./MapCanvas";
+import { DeskChat } from "./DeskChat";
 import { DetailPanel } from "./DetailPanel";
 import { FilterBar } from "./FilterBar";
 import { GapPanel } from "./GapPanel";
@@ -76,6 +77,7 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
   const [usingProfile, setUsingProfile] = useState(false);
   const [booted, setBooted] = useState(false);
   const [metricFilters, setMetricFilters] = useState<MetricId[]>([]);
+  const [deskOpen, setDeskOpen] = useState(false);
 
   const search = useCallback(async (
     nextQuery: string,
@@ -314,8 +316,11 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
             onChange={(event) => setQuery(event.target.value)}
           />
         </form>
-        <div className="topbar-right" aria-hidden={!loading}>
+        <div className="topbar-right">
           {loading && <span className="muted">Searching…</span>}
+          <button type="button" className="desk-open" onClick={() => setDeskOpen(true)}>
+            Desk
+          </button>
         </div>
       </header>
 
@@ -484,6 +489,15 @@ export function AppShell({ MapCanvas }: { MapCanvas: ComponentType<{ pins: Pin[]
           </div>
         </aside>
       </div>
+
+      <DeskChat
+        open={deskOpen}
+        onClose={() => setDeskOpen(false)}
+        selectedId={selectedId}
+        sessionId={sessionId()}
+        onResults={setResults}
+        onOpenStorefront={(id) => openStorefront(id, filters?.category ?? null).catch((caught) => setError(caught.message))}
+      />
 
       {onboardingOpen && (
         <Onboarding

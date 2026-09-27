@@ -40,7 +40,7 @@ The map is a stratified sample of opportunity filings, not every storefront in t
 
 Refresh the extract with `npm run fetch-data`, then `npm run db:setup`. `data/snapshot.json` is the copy the app loads so the demo still runs if those APIs are slow.
 
-SpaceXAI / Photon was not available in this environment and is not integrated.
+The Lease desk is the SpaceXAI agent. It is closed until the browser saves a name, business, and reply-to email. Google sign-in is not connected. The desk calls `https://api.x.ai/v1/responses` when `XAI_API_KEY` is set, shows each filing lookup as it happens, and drafts a note only from those filings. Approving a note stores it. Nothing is emailed, because no mail service is connected. If the key is missing or SpaceXAI rejects the call, the same desk answers from the filing search.
 
 ## Scoring
 
