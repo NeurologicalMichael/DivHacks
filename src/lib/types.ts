@@ -64,6 +64,7 @@ export type StorefrontDetail = Summary & {
     detail: string;
     source: string;
     provenance: string;
+    subjectDate?: string | null;
   }[];
   transit: { name: string; routes: string | null; meters: number; ada: boolean }[];
   pedestrian: {

@@ -214,10 +214,13 @@ export function DetailPanel({
         <p className="section-sub">This building</p>
         <ol className="timeline-list">
           {historyPreview.map((event) => (
-            <li key={event.title + event.occurredAt}>
+            <li key={event.title + event.occurredAt + (event.subjectDate ?? "")}>
               <time>{formatDate(event.occurredAt)}</time>
               <div>
                 <strong>{event.title}</strong>
+                {event.subjectDate && event.subjectDate !== event.occurredAt && (
+                  <span className="sub">Reported date on file: {formatDate(event.subjectDate)}</span>
+                )}
                 <span className="sub">{event.source}</span>
               </div>
             </li>
@@ -276,7 +279,7 @@ export function DetailPanel({
           <div className="panel-card">
             <header className="section-head">
               <h3>Live weight mix</h3>
-              <span>Total ≤ 100</span>
+              <span>Total points</span>
             </header>
             <MetricsDonut metrics={metrics} onChange={setMetrics} />
           </div>

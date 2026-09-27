@@ -9,6 +9,7 @@ import {
   snapshotNearbyCategoryCount,
   snapshotSearch,
 } from "./snapshotStore";
+import { normalizeTimeline } from "./timeline";
 import type { BreakdownItem, Gap, SearchFilters, StorefrontDetail, Summary } from "./types";
 
 type Row = Record<string, unknown>;
@@ -213,10 +214,10 @@ async function getStorefrontDb(id: string, category: string | null): Promise<Sto
         [id],
       ),
       query<Row>(
-        `SELECT occurred_at, title, detail, source, provenance
+        `SELECT occurred_at, event_type, title, detail, source, provenance, payload
          FROM property_events WHERE property_id = $1
          ORDER BY occurred_at DESC
-         LIMIT 24`,
+         LIMIT 48`,
         [id],
       ),
       query<Row>(
@@ -287,13 +288,7 @@ async function getStorefrontDb(id: string, category: string | null): Promise<Sto
     sourceDataset: String(row.source_dataset),
     signals: signalRows,
     fitBreakdown: (row.components as BreakdownItem[]) ?? [],
-    timeline: timeline.map((event) => ({
-      occurredAt: date(event.occurred_at) ?? "",
-      title: String(event.title),
-      detail: String(event.detail),
-      source: String(event.source),
-      provenance: String(event.provenance),
-    })),
+    timeline: normalizeTimeline(timeline).slice(0, 24),
     transit: transit.map((station) => ({
       name: String(station.name),
       routes: station.routes ? String(station.routes) : null,

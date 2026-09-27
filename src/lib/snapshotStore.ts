@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { availabilityFor } from "./availability";
+import { mergePermitEvents, normalizeTimeline } from "./timeline";
 import type { BreakdownItem, Gap, SearchFilters, Signal, StorefrontDetail, Summary } from "./types";
 
 type Prop = Record<string, unknown>;
@@ -19,11 +20,14 @@ type Snapshot = {
 };
 
 let cache: Snapshot | null = null;
+let cacheMtime = 0;
 
 function loadSnapshot(): Snapshot {
-  if (cache) return cache;
   const file = path.join(process.cwd(), "data", "snapshot.json");
+  const mtime = fs.statSync(file).mtimeMs;
+  if (cache && cacheMtime === mtime) return cache;
   cache = JSON.parse(fs.readFileSync(file, "utf8")) as Snapshot;
+  cacheMtime = mtime;
   return cache;
 }
 
@@ -87,7 +91,7 @@ function buildSignals(property: Prop, snap: Snapshot): Signal[] {
       weight: near ? 28 : 14,
       evidence: `The latest storefront filing includes expir_dt_of_most_recent_lease = ${lease}.`,
       source: "NYC Storefront Registry",
-      observedAt: lease,
+      observedAt: dateStr(property.as_of) ?? lease,
       provenance: "nyc_open_data",
     });
   }
@@ -134,23 +138,28 @@ function buildSignals(property: Prop, snap: Snapshot): Signal[] {
     .filter((row) => str(row.property_id) === id)
     .sort((a, b) => str(b.filing_date).localeCompare(str(a.filing_date)))[0];
   if (permit) {
-    const desc = str(permit.description).toLowerCase();
-    const job = str(permit.job_type).toLowerCase();
-    let weight = 14;
-    let label = "Recent DOB job filing";
-    if (job.includes("demol")) weight = 16;
-    else if (desc.includes("sidewalk shed") || desc.includes("scaffold")) {
-      weight = 5;
-      label = "Recent sidewalk shed or scaffold filing";
-    } else if (job.includes("new building")) weight = 12;
-    signals.push({
-      label,
-      weight,
-      evidence: `DOB NOW job ${permit.job_number} (${permit.job_type}) was filed ${permit.filing_date}. Status: ${permit.status}.`,
-      source: str(permit.source) || "DOB NOW",
-      observedAt: dateStr(permit.filing_date),
-      provenance: "nyc_open_data",
-    });
+    const filedDays = daysFromToday(dateStr(permit.filing_date));
+    // Only treat filings in the last ~3 years as a turnover signal.
+    // Match SQL refresh_signals: only filings in the last 18 months.
+    if (filedDays != null && filedDays >= -548) {
+      const desc = str(permit.description).toLowerCase();
+      const job = str(permit.job_type).toLowerCase();
+      let weight = 14;
+      let label = "Recent DOB job filing";
+      if (job.includes("demol")) weight = 16;
+      else if (desc.includes("sidewalk shed") || desc.includes("scaffold")) {
+        weight = 5;
+        label = "Recent sidewalk shed or scaffold filing";
+      } else if (job.includes("new building")) weight = 12;
+      signals.push({
+        label,
+        weight,
+        evidence: `DOB NOW job ${permit.job_number} (${permit.job_type}) was filed ${permit.filing_date}. Status: ${permit.status}.`,
+        source: str(permit.source) || "DOB NOW",
+        observedAt: dateStr(permit.filing_date),
+        provenance: "nyc_open_data",
+      });
+    }
   }
 
   const license = snap.licenses
@@ -348,6 +357,7 @@ export function snapshotHealth() {
     hypertables: 0,
     multi_signal: snap.properties.filter((p) => buildSignals(p, snap).length >= 2).length,
     mode: "snapshot" as const,
+    asOf: str(snap.meta?.app_as_of) || null,
   };
 }
 
@@ -408,29 +418,10 @@ export function snapshotGetStorefront(id: string, category: string | null): Stor
   const lat = summary.lat;
   const lng = summary.lng;
 
-  const timeline = snap.events
-    .filter((e) => str(e.property_id) === id)
-    .sort((a, b) => str(b.occurred_at).localeCompare(str(a.occurred_at)))
-    .slice(0, 24)
-    .map((e) => ({
-      occurredAt: dateStr(e.occurred_at) ?? "",
-      title: str(e.title),
-      detail: str(e.detail),
-      source: str(e.source),
-      provenance: str(e.provenance),
-    }));
-
-  // Enrich timeline with permits/sales if events are sparse
-  for (const permit of snap.permits.filter((p) => str(p.property_id) === id).slice(0, 4)) {
-    timeline.push({
-      occurredAt: dateStr(permit.filing_date) ?? "",
-      title: "Alteration permit filed",
-      detail: str(permit.description).slice(0, 180),
-      source: "DOB permits",
-      provenance: "nyc_open_data",
-    });
-  }
-  timeline.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+  const timeline = mergePermitEvents(
+    normalizeTimeline(snap.events.filter((e) => str(e.property_id) === id)),
+    snap.permits.filter((p) => str(p.property_id) === id).slice(0, 6),
+  ).slice(0, 24);
 
   const transit = snap.stations
     .map((s) => ({

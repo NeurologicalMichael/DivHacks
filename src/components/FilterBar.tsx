@@ -4,20 +4,42 @@ import { useEffect, useState } from "react";
 import { BOROUGHS, CATEGORIES, NEIGHBORHOODS } from "@/lib/catalog";
 import type { SearchFilters } from "@/lib/types";
 
-function chipLabel(filters: SearchFilters): string[] {
-  const chips: string[] = [];
-  if (filters.neighborhoods.length) chips.push(filters.neighborhoods.join(", "));
-  else if (filters.boroughs.length) chips.push(filters.boroughs.join(", "));
-  else chips.push("Location");
-  if (filters.category) {
-    const label = CATEGORIES.find((c) => c.id === filters.category)?.label ?? filters.category;
-    chips.push(`${label} ready`);
-  }
-  if (filters.vacantOnly) chips.push("Vacant");
-  if (filters.nearSubway) chips.push("Near subway");
-  if (filters.months) chips.push(`${filters.months} mo window`);
-  if (filters.minTurnover) chips.push(`Turnover ≥ ${filters.minTurnover}`);
-  return chips.slice(0, 4);
+type FilterChip = {
+  id: string;
+  label: string;
+  active: boolean;
+};
+
+/** Always render Location + Use as separate boxes; extras as their own boxes. */
+function buildChips(filters: SearchFilters | null): FilterChip[] {
+  const chips: FilterChip[] = [];
+  const location =
+    filters?.neighborhoods.length
+      ? filters.neighborhoods.join(", ")
+      : filters?.boroughs.length
+        ? filters.boroughs.join(", ")
+        : "Location";
+  chips.push({
+    id: "location",
+    label: location,
+    active: Boolean(filters?.neighborhoods.length || filters?.boroughs.length),
+  });
+
+  const category = filters?.category
+    ? `${CATEGORIES.find((c) => c.id === filters.category)?.label ?? filters.category} ready`
+    : "Restaurant ready";
+  chips.push({
+    id: "category",
+    label: category,
+    active: Boolean(filters?.category),
+  });
+
+  if (filters?.vacantOnly) chips.push({ id: "vacant", label: "Vacant", active: true });
+  if (filters?.nearSubway) chips.push({ id: "subway", label: "Near subway", active: true });
+  if (filters?.months) chips.push({ id: "months", label: `${filters.months} mo window`, active: true });
+  if (filters?.minTurnover) chips.push({ id: "turnover", label: `Turnover ≥ ${filters.minTurnover}`, active: true });
+
+  return chips;
 }
 
 export function FilterBar({
@@ -34,7 +56,7 @@ export function FilterBar({
     if (open) setDraft(filters ? { ...filters } : null);
   }, [open, filters]);
 
-  const chips = filters ? chipLabel(filters) : ["Location"];
+  const chips = buildChips(filters);
 
   function toggleBorough(borough: string) {
     if (!draft) return;
@@ -57,10 +79,16 @@ export function FilterBar({
   return (
     <div className="filter-bar">
       <span className="filter-label">Filter</span>
-      <div className="filter-chips">
+      <div className="filter-chips" role="list">
         {chips.map((chip) => (
-          <button key={chip} type="button" className="filter-chip" onClick={() => setOpen(true)}>
-            {chip}
+          <button
+            key={chip.id}
+            type="button"
+            role="listitem"
+            className={chip.active ? "filter-box is-active" : "filter-box"}
+            onClick={() => setOpen(true)}
+          >
+            {chip.label}
           </button>
         ))}
       </div>
@@ -146,7 +174,13 @@ export function FilterBar({
                 <input
                   type="checkbox"
                   checked={draft.vacantOnly}
-                  onChange={(event) => setDraft({ ...draft, vacantOnly: event.target.checked, months: event.target.checked ? null : draft.months })}
+                  onChange={(event) =>
+                    setDraft({
+                      ...draft,
+                      vacantOnly: event.target.checked,
+                      months: event.target.checked ? null : draft.months,
+                    })
+                  }
                 />
                 Vacant filings only
               </label>
@@ -185,7 +219,10 @@ export function FilterBar({
                   value={draft.minTurnover || ""}
                   placeholder="0"
                   onChange={(event) =>
-                    setDraft({ ...draft, minTurnover: event.target.value === "" ? 0 : Math.min(100, Number(event.target.value)) })
+                    setDraft({
+                      ...draft,
+                      minTurnover: event.target.value === "" ? 0 : Math.min(100, Number(event.target.value)),
+                    })
                   }
                 />
               </label>

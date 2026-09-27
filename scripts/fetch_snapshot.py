@@ -839,16 +839,25 @@ def main():
             )
             filing_lease = date_only(filing.get("expir_dt_of_most_recent_lease"))
             if filing_lease:
+                # Anchor timeline to when the filing was reported, not the lease end date.
+                # Using the lease end as occurred_at floated far-future dates (e.g. 2038) to the top.
                 events.append(
                     {
                         "property_id": pid,
-                        "occurred_at": filing_lease + "T00:00:00Z",
+                        "occurred_at": as_of + "T00:00:00Z",
                         "event_type": "lease_date_on_file",
-                        "title": "Lease expiration reported",
-                        "detail": f"The {filing.get('reporting_year')} filing reports expir_dt_of_most_recent_lease as {filing_lease}. This is an owner-reported registry field, not a confirmed listing.",
+                        "title": "Lease expiration on file",
+                        "detail": (
+                            f"The {filing.get('reporting_year')} filing reports "
+                            f"expir_dt_of_most_recent_lease as {filing_lease}. "
+                            "This is an owner-reported registry field, not a confirmed listing."
+                        ),
                         "source": "NYC Storefront Registry",
                         "provenance": "nyc_open_data",
-                        "payload": {"lease_expiration": filing_lease, "reporting_year": filing.get("reporting_year")},
+                        "payload": {
+                            "lease_expiration": filing_lease,
+                            "reporting_year": filing.get("reporting_year"),
+                        },
                     }
                 )
             filing_sale = date_only(filing.get("sold_date"))
@@ -856,13 +865,13 @@ def main():
                 events.append(
                     {
                         "property_id": pid,
-                        "occurred_at": filing_sale + "T00:00:00Z",
+                        "occurred_at": as_of + "T00:00:00Z",
                         "event_type": "registry_sale_date",
                         "title": "Sale date on storefront filing",
                         "detail": f"The {filing.get('reporting_year')} filing includes sold_date {filing_sale}.",
                         "source": "NYC Storefront Registry",
                         "provenance": "nyc_open_data",
-                        "payload": {"sold_date": filing_sale},
+                        "payload": {"sold_date": filing_sale, "reporting_year": filing.get("reporting_year")},
                     }
                 )
 
@@ -977,21 +986,29 @@ def main():
                     "source": "DCWP Issued Licenses (w7w3-xahh)",
                 }
             )
-            if row.get("lic_expir_dd"):
+            created = date_only(row.get("license_creation_date"))
+            expiration = date_only(row.get("lic_expir_dd"))
+            if created or expiration:
+                # Anchor to issuance, not expiration — future expirations were floating to the top.
+                when = created or expiration
                 events.append(
                     {
                         "property_id": pid,
-                        "occurred_at": date_only(row.get("lic_expir_dd")) + "T00:00:00Z",
+                        "occurred_at": when + "T00:00:00Z",
                         "event_type": "license",
                         "title": f"DCWP license {row.get('license_status') or ''}".strip(),
                         "detail": (
                             f"{row.get('business_name') or 'A business'} — {row.get('business_category') or 'license'}. "
                             f"Status {row.get('license_status') or 'not stated'}. "
-                            f"Expiration on file {date_only(row.get('lic_expir_dd'))}. Joined on the tax lot."
+                            f"Expiration on file {expiration or 'not stated'}. Joined on the tax lot."
                         ),
                         "source": "DCWP Issued Licenses",
                         "provenance": "nyc_open_data",
-                        "payload": {"status": row.get("license_status")},
+                        "payload": {
+                            "status": row.get("license_status"),
+                            "created_date": created,
+                            "expiration_date": expiration,
+                        },
                     }
                 )
 

@@ -11,7 +11,7 @@ export async function GET() {
       ok: true,
       ...status,
       gemini: geminiConfigured(),
-      asOf: "2026-09-26",
+      asOf: (status as { asOf?: string | null }).asOf ?? "2026-09-26",
     });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Database unavailable" }, { status: 500 });

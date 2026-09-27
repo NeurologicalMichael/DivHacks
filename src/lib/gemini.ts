@@ -14,7 +14,7 @@ function client() {
   return new GoogleGenerativeAI(key);
 }
 
-const MODELS = [process.env.GEMINI_MODEL, "gemini-2.5-flash", "gemini-2.0-flash"].filter(
+const MODELS = [process.env.GEMINI_MODEL, "gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.0-flash"].filter(
   (model): model is string => Boolean(model),
 );
 

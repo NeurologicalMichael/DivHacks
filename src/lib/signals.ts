@@ -127,7 +127,8 @@ export function matchMetric(labelOrType: string): MetricDef | undefined {
 }
 
 export type MetricState = {
-  id: MetricId;
+  id: string;
+  label?: string;
   enabled: boolean;
   weight: number;
   found: boolean;
@@ -136,18 +137,42 @@ export type MetricState = {
   observedAt?: string | null;
 };
 
+export function metricLabel(metric: MetricState) {
+  if (metric.label) return metric.label;
+  return METRIC_DEFS.find((d) => d.id === metric.id)?.label ?? metric.id;
+}
+
+export function metricDef(id: string) {
+  return METRIC_DEFS.find((d) => d.id === id);
+}
+
 export function buildMetricStates(
   signals: { label: string; weight: number; evidence?: string; source?: string; observedAt?: string | null }[],
 ): MetricState[] {
   const foundById = new Map<MetricId, (typeof signals)[number]>();
+  const unmatched: MetricState[] = [];
   for (const signal of signals) {
     const def = matchMetric(signal.label);
-    if (def && !foundById.has(def.id)) foundById.set(def.id, signal);
+    if (def) {
+      if (!foundById.has(def.id)) foundById.set(def.id, signal);
+      continue;
+    }
+    unmatched.push({
+      id: `extra:${signal.label}`,
+      label: signal.label,
+      enabled: true,
+      weight: signal.weight,
+      found: true,
+      evidence: signal.evidence,
+      source: signal.source,
+      observedAt: signal.observedAt,
+    });
   }
-  return METRIC_DEFS.map((def) => {
+  const catalog = METRIC_DEFS.map((def) => {
     const found = foundById.get(def.id);
     return {
       id: def.id,
+      label: def.label,
       enabled: Boolean(found),
       weight: found?.weight ?? def.defaultWeight,
       found: Boolean(found),
@@ -156,35 +181,23 @@ export function buildMetricStates(
       observedAt: found?.observedAt,
     };
   });
+  return [...catalog, ...unmatched];
 }
 
 export function enabledTotal(metrics: MetricState[]) {
   return metrics.filter((m) => m.enabled).reduce((sum, m) => sum + m.weight, 0);
 }
 
-/** Clamp a weight change so enabled totals never exceed 100. */
-export function clampWeightChange(metrics: MetricState[], id: MetricId, nextWeight: number): MetricState[] {
-  const def = METRIC_DEFS.find((item) => item.id === id);
-  if (!def) return metrics;
+/** Adjust a metric weight. Totals may exceed 100. */
+export function clampWeightChange(metrics: MetricState[], id: string, nextWeight: number): MetricState[] {
   const current = metrics.find((m) => m.id === id);
   if (!current) return metrics;
-  let weight = Math.max(def.min, Math.min(def.max, Math.round(nextWeight)));
-  if (current.enabled) {
-    const others = metrics.filter((m) => m.enabled && m.id !== id).reduce((sum, m) => sum + m.weight, 0);
-    const room = 100 - others;
-    if (weight > room) weight = Math.max(0, room);
-  }
+  const weight = Math.max(0, Math.round(nextWeight));
   return metrics.map((m) => (m.id === id ? { ...m, weight } : m));
 }
 
-export function toggleMetric(metrics: MetricState[], id: MetricId, enabled: boolean): MetricState[] {
-  if (!enabled) return metrics.map((m) => (m.id === id ? { ...m, enabled: false } : m));
-  const others = metrics.filter((m) => m.enabled && m.id !== id).reduce((sum, m) => sum + m.weight, 0);
-  if (others >= 100) return metrics; // hard block — no room under the 100 cap
-  const room = 100 - others;
-  return metrics.map((m) =>
-    m.id === id ? { ...m, enabled: true, weight: Math.min(m.weight, room) } : m,
-  );
+export function toggleMetric(metrics: MetricState[], id: string, enabled: boolean): MetricState[] {
+  return metrics.map((m) => (m.id === id ? { ...m, enabled } : m));
 }
 
 export function fitLabel(score: number) {
