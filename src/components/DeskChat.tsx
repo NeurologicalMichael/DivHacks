@@ -5,6 +5,7 @@ import type { DeskAccount, DeskDraft, DeskEvent } from "@/lib/desk";
 import type { Summary } from "@/lib/types";
 
 const ACCOUNT_KEY = "leaselens-desk-account";
+const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
 
 type Bubble = {
   role: "user" | "desk";
@@ -16,12 +17,28 @@ type Bubble = {
   approval?: string;
 };
 
+type GoogleAccounts = {
+  accounts: {
+    id: {
+      initialize: (config: { client_id: string; callback: (response: { credential?: string }) => void }) => void;
+      renderButton: (parent: HTMLElement, options: Record<string, string | number>) => void;
+    };
+  };
+};
+
+declare global {
+  interface Window {
+    google?: GoogleAccounts;
+  }
+}
+
 function loadAccount(): DeskAccount | null {
   try {
     const raw = window.localStorage.getItem(ACCOUNT_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as DeskAccount;
     if (!parsed?.name || !parsed.business || !parsed.email) return null;
+    if (parsed.provider !== "google" && parsed.provider !== "manual") delete parsed.provider;
     return parsed;
   } catch {
     return null;
@@ -48,10 +65,17 @@ export function DeskChat({
   const [business, setBusiness] = useState("");
   const [email, setEmail] = useState("");
   const [formError, setFormError] = useState("");
+  const [fromGoogle, setFromGoogle] = useState(false);
+  const [googleName, setGoogleName] = useState("");
+  const [googleCredential, setGoogleCredential] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState("");
   const [messages, setMessages] = useState<Bubble[]>([]);
   const [draftText, setDraftText] = useState("");
   const [busy, setBusy] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
+  const googleHost = useRef<HTMLDivElement>(null);
+  const acceptGoogle = useRef<(credential: string) => void>(() => {});
 
   useEffect(() => {
     const saved = loadAccount();
@@ -67,15 +91,147 @@ export function DeskChat({
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
   }, [messages, open]);
 
-  function saveAccount(event: FormEvent) {
+  acceptGoogle.current = (credential: string) => {
+    void (async () => {
+      setFormError("");
+      setSaving(true);
+      try {
+        const response = await fetch("/api/auth/google", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ credential }),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          setFormError(payload.error || "Google sign-in failed.");
+          return;
+        }
+        if (payload.account?.name && payload.account.business && payload.account.email) {
+          const next = { ...payload.account, provider: "google" as const };
+          window.localStorage.setItem(ACCOUNT_KEY, JSON.stringify(next));
+          setAccount(next);
+          setFormError("");
+          return;
+        }
+        setName(payload.name || "");
+        setEmail(payload.email || "");
+        setGoogleName(payload.name || "");
+        setGoogleCredential(credential);
+        setFromGoogle(true);
+      } catch {
+        setFormError("Google sign-in failed.");
+      } finally {
+        setSaving(false);
+      }
+    })();
+  };
+
+  useEffect(() => {
+    if (!open || account || !GOOGLE_CLIENT_ID) return;
+    let cancelled = false;
+    const render = () => {
+      const host = googleHost.current;
+      if (cancelled || !host || !window.google?.accounts?.id) return;
+      host.replaceChildren();
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: (response) => {
+          if (response.credential) acceptGoogle.current(response.credential);
+        },
+      });
+      const width = Math.max(240, Math.min(352, host.clientWidth || 352));
+      window.google.accounts.id.renderButton(host, {
+        type: "standard",
+        theme: "outline",
+        size: "large",
+        text: "signup_with",
+        shape: "pill",
+        width,
+        logo_alignment: "left",
+      });
+    };
+    if (window.google?.accounts?.id) {
+      render();
+      return () => {
+        cancelled = true;
+      };
+    }
+    const existing = document.querySelector<HTMLScriptElement>('script[data-leaselens-gsi="1"]');
+    const script = existing ?? document.createElement("script");
+    script.addEventListener("load", render);
+    if (!existing) {
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.dataset.leaselensGsi = "1";
+      document.head.appendChild(script);
+    }
+    return () => {
+      cancelled = true;
+      script.removeEventListener("load", render);
+    };
+  }, [open, account]);
+
+  function clearGoogle() {
+    setFromGoogle(false);
+    setGoogleCredential("");
+    setGoogleName("");
+    setName("");
+    setEmail("");
+    setFormError("");
+  }
+
+  function signOut() {
+    window.localStorage.removeItem(ACCOUNT_KEY);
+    setAccount(null);
+    setMessages([]);
+    setNotice("");
+    clearGoogle();
+    setBusiness("");
+  }
+
+  async function saveAccount(event: FormEvent) {
     event.preventDefault();
     const next = { name: name.trim(), business: business.trim(), email: email.trim() };
-    if (next.name.length < 2 || next.business.length < 2 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next.email)) {
+    if (!fromGoogle && (next.name.length < 2 || next.business.length < 2 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next.email))) {
       setFormError("Enter your name, business, and a real email.");
       return;
     }
-    window.localStorage.setItem(ACCOUNT_KEY, JSON.stringify(next));
-    setAccount(next);
+    if (next.business.length < 2) {
+      setFormError("Enter the business name.");
+      return;
+    }
+    if (fromGoogle) {
+      if (!googleCredential) {
+        setFormError("Google sign-in expired. Continue with Google again.");
+        return;
+      }
+      setSaving(true);
+      try {
+        const response = await fetch("/api/auth/google", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ credential: googleCredential, business: next.business, name: next.name }),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.account) {
+          setFormError(payload.error || "Could not create the Google account.");
+          return;
+        }
+        const saved = { ...payload.account, provider: "google" as const };
+        window.localStorage.setItem(ACCOUNT_KEY, JSON.stringify(saved));
+        setAccount(saved);
+        setNotice(payload.stored ? "" : "Account saved in this browser. The database did not store it.");
+        setFormError("");
+      } catch {
+        setFormError("Could not create the Google account.");
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+    const manual = { ...next, provider: "manual" as const };
+    window.localStorage.setItem(ACCOUNT_KEY, JSON.stringify(manual));
+    setAccount(manual);
     setFormError("");
   }
 
@@ -175,18 +331,46 @@ export function DeskChat({
       <header className="desk-head">
         <div>
           <strong>Lease desk</strong>
-          <p>{account ? account.business : "Who is asking"}</p>
+          <p>{account ? (account.provider === "google" ? `${account.business} · Google` : account.business) : "Who is asking"}</p>
         </div>
-        <button type="button" className="desk-close" onClick={onClose} aria-label="Close desk">
-          Close
-        </button>
+        <div className="desk-head-actions">
+          {account && (
+            <button type="button" className="desk-close" onClick={signOut}>
+              Sign out
+            </button>
+          )}
+          <button type="button" className="desk-close" onClick={onClose} aria-label="Close desk">
+            Close
+          </button>
+        </div>
       </header>
       {!account ? (
         <form className="desk-account" onSubmit={saveAccount}>
-          <p>The desk writes notes in your name, so it needs an account before the first message. Google sign-in is not connected. This name and email stay in this browser.</p>
+          <p>
+            {fromGoogle
+              ? `Google confirmed ${email}. Add the business name to create the account.`
+              : "The desk writes notes in your name. Continue with Google, or type a name and email for this browser. The business name is required either way."}
+          </p>
+          {!fromGoogle && (GOOGLE_CLIENT_ID ? (
+            <div ref={googleHost} className="desk-google" />
+          ) : (
+            <button
+              type="button"
+              className="desk-google-fallback"
+              onClick={() => setFormError("Add NEXT_PUBLIC_GOOGLE_CLIENT_ID to .env.local, then restart the app.")}
+            >
+              Continue with Google
+            </button>
+          ))}
+          {fromGoogle && (
+            <button type="button" className="desk-text-button" onClick={clearGoogle}>
+              Use a different account
+            </button>
+          )}
+          {!fromGoogle && <p className="desk-or">or enter it yourself</p>}
           <label>
             Your name
-            <input value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" />
+            <input value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" readOnly={fromGoogle && googleName.length >= 2} />
           </label>
           <label>
             Business
@@ -194,14 +378,17 @@ export function DeskChat({
           </label>
           <label>
             Reply-to email
-            <input value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" />
+            <input value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" readOnly={fromGoogle} />
           </label>
           {formError && <p className="error">{formError}</p>}
-          <button type="submit" className="onboard-primary">Continue</button>
+          <button type="submit" className="onboard-primary" disabled={saving}>
+            {fromGoogle ? "Create account" : "Continue"}
+          </button>
         </form>
       ) : (
         <>
           <div className="desk-log" ref={scroller}>
+            {notice && <p className="desk-empty">{notice}</p>}
             {messages.length === 0 && (
               <p className="desk-empty">Ask for a kind of space, or ask for a note on the storefront you have open.</p>
             )}

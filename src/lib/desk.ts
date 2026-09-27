@@ -4,7 +4,12 @@ import { describeFilters, parseQuery } from "./parseQuery";
 import { getStorefront, searchStorefronts } from "./queries";
 import type { SearchFilters, StorefrontDetail, Summary } from "./types";
 
-export type DeskAccount = { name: string; business: string; email: string };
+export type DeskAccount = {
+  name: string;
+  business: string;
+  email: string;
+  provider?: "google" | "manual";
+};
 
 export type DeskDraft = {
   id: string;
@@ -35,7 +40,8 @@ export function cleanAccount(input: unknown): DeskAccount | null {
   const email = typeof raw.email === "string" ? raw.email.trim().slice(0, 120) : "";
   if (name.length < 2 || business.length < 2) return null;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
-  return { name, business, email };
+  const provider = raw.provider === "google" || raw.provider === "manual" ? raw.provider : undefined;
+  return provider ? { name, business, email, provider } : { name, business, email };
 }
 
 function brief(result: Summary) {
